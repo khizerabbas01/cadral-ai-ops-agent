@@ -26,6 +26,28 @@ have has had not no yes how what when where which who whom why there here about 
 long much many some something anything get need want take please tell know like just also still""".split())
 
 
+def onnx_threads() -> int | None:
+    """Threads for the embedding and reranker models. ONNX Runtime sizes its pools from the host's core count;
+    in a container with a CPU limit that is far more than it may use, and the spinning threads starve each
+    other. RAG_THREADS wins; otherwise the cgroup CPU limit is used when there is one."""
+    if settings.rag_threads > 0:
+        return settings.rag_threads
+    try:  # cgroup v2
+        quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()[:2]
+        if quota != "max":
+            return max(1, math.ceil(int(quota) / int(period)))
+    except (OSError, ValueError):
+        pass
+    try:  # cgroup v1
+        quota = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read_text())
+        period = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text())
+        if quota > 0 and period > 0:
+            return max(1, math.ceil(quota / period))
+    except (OSError, ValueError):
+        pass
+    return None  # no limit visible: leave it to ONNX Runtime
+
+
 def _stem(t: str) -> str:
     """Tiny suffix stripper (returns/returned/returning -> return) - good enough for BM25 recall."""
     if len(t) <= 4 or t[0].isdigit() or t[0] == "£":
@@ -199,8 +221,9 @@ class Embedder:
             if settings.rag_backend == "lite":
                 raise RuntimeError("RAG_BACKEND=lite")
             from fastembed import TextEmbedding
-            self._model = TextEmbedding(model_name=settings.embedding_model)
+            self._model = TextEmbedding(model_name=settings.embedding_model, threads=onnx_threads())
             self.backend = f"fastembed:{settings.embedding_model}"
+            log.info("ONNX models use %s thread(s)", onnx_threads() or "the default number of")
         except Exception as e:  # pragma: no cover - depends on environment
             log.warning("fastembed unavailable (%s) - using LSA embeddings", e)
 
@@ -250,7 +273,7 @@ class Reranker:
             if settings.rag_backend == "lite":
                 raise RuntimeError("RAG_BACKEND=lite")
             from fastembed.rerank.cross_encoder import TextCrossEncoder
-            self._model = TextCrossEncoder(model_name=settings.reranker_model)
+            self._model = TextCrossEncoder(model_name=settings.reranker_model, threads=onnx_threads())
             self.backend = f"cross-encoder:{settings.reranker_model}"
         except Exception as e:  # pragma: no cover
             log.warning("cross-encoder unavailable (%s) - using heuristic reranker", e)

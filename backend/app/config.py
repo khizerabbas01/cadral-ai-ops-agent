@@ -73,6 +73,7 @@ class Settings:
     embedding_model: str = field(default_factory=lambda: _env("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5"))
     reranker_model: str = field(default_factory=lambda: _env("RERANKER_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2"))
     rag_backend: str = field(default_factory=lambda: _env("RAG_BACKEND", "auto"))  # auto | lite (no ONNX models)
+    rag_threads: int = field(default_factory=lambda: int(_env("RAG_THREADS", "0") or 0))  # 0 = the container's CPU limit
     rag_min_score: float = field(default_factory=lambda: float(_env("RAG_MIN_SCORE", "0.12")))
     rag_heuristic_min_score: float = field(default_factory=lambda: float(_env("RAG_HEURISTIC_MIN_SCORE", "0.45")))
     docs_dir: Path = BASE_DIR / "data" / "docs"
