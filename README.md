@@ -6,7 +6,7 @@ from corrections and reports to management.
 
 | | |
 |---|---|
-| **Live demo** | _add URL after deploying (see [Deployment](#deployment))_ |
+| **Live demo** | <https://cadral-ai-ops-agent-production.up.railway.app> - the [customer chat](https://cadral-ai-ops-agent-production.up.railway.app/#/chat) is open to anyone, the dashboard needs a login (shared with the submission). Hosted on a free trial that runs until about mid-December 2026 |
 | **Demo video** | _add link_ |
 | **Write-up** | [docs/WRITEUP.md](docs/WRITEUP.md) - architecture, trade-offs, fine-tuning, evals, scaling |
 
@@ -21,7 +21,7 @@ from corrections and reports to management.
 | **Automation** | Channels: web chat, email (IMAP poll or inbound webhook), Telegram. Daily management report by email (APScheduler). Slack alerts for escalations and system errors. Durable DB-backed job queue with backoff retries and a dead-letter state. [`jobs.py`](backend/app/jobs.py), [`channels.py`](backend/app/channels.py) |
 | **Dashboard** | JWT login with `admin` / `agent` roles, live conversations with token streaming (SSE), agent trace (which agent, which tools, why), human approval queue with approve / edit / reject, analytics. [`frontend/`](frontend) |
 | **Evals & monitoring** | 65 graded cases, one command (or one button), one score. Tokens, cost and latency recorded per LLM call and per request. [`evals/`](backend/evals) |
-| **Deployment** | Single Docker image, all secrets from environment variables. [`Dockerfile`](Dockerfile), [`render.yaml`](render.yaml) |
+| **Deployment** | Single Docker image, all secrets from environment variables, live on Railway. [`Dockerfile`](Dockerfile), [Deployment](#deployment) |
 
 ## Architecture
 
@@ -57,7 +57,7 @@ settings, replay jobs or run evaluations.
 ## Quick start
 
 ```bash
-git clone <repo> && cd cadral-ai-ops-agent
+git clone https://github.com/khizerabbas01/cadral-ai-ops-agent.git && cd cadral-ai-ops-agent
 cp .env.example .env          # add LLM_API_KEY (free at console.groq.com), ADMIN_PASSWORD, AGENT_PASSWORD
 docker compose up --build     # http://localhost:8000
 ```
@@ -160,12 +160,20 @@ are stored in the database and override the environment defaults.
 
 The image is self-contained (API + frontend + knowledge base, plus the ONNX models unless built for `lite`).
 
-- **Render free plan (the live demo):** push the repo to GitHub, then in Render choose *New -> Blueprint* and pick
-  it. [`render.yaml`](render.yaml) asks for three values - `LLM_API_KEY`, `ADMIN_PASSWORD`, `AGENT_PASSWORD` - and
-  sets the rest. What the free plan means in practice: 512 MB RAM, so the blueprint uses `RAG_BACKEND=lite`
-  (BM25 + LSA vectors + heuristic reranker instead of the ONNX models); the service sleeps after 15 minutes
-  without traffic and takes about a minute to wake; the disk is wiped on every restart, so sample traffic and the
-  recorded eval runs are reloaded on boot; outbound SMTP is blocked; and *Run evaluation* is switched off there.
+- **Railway (the live demo):** connect the GitHub repository to a service; Railway finds the Dockerfile on its
+  own. Service variables: `LLM_PROVIDER=groq`, `LLM_API_KEY`, `ADMIN_PASSWORD`, `AGENT_PASSWORD`,
+  `RAG_BACKEND=lite`, `DEMO_SEED_ON_BOOT=true`, `ALLOW_EVAL_RUN=false` and `PORT=8000`; health check path
+  `/api/health`. Railway hands service variables to the Docker build, so `RAG_BACKEND=lite` also skips the model
+  download there. Watch paths `/backend/**`, `/frontend/**`, `/finetune/**` and `/Dockerfile` keep documentation
+  commits from restarting the demo. It runs on Railway's 30-day trial (no card, about $5 of usage); the
+  container's disk is not persistent, so sample traffic and the recorded eval runs are reloaded on every deploy.
+  The trial allows 1 GB per service; the demo still uses `lite` retrieval (BM25 + LSA vectors + heuristic
+  reranker), the configuration the eval numbers were measured with.
+- **Render free plan:** [`render.yaml`](render.yaml) is a ready blueprint (*New -> Blueprint*) that asks for
+  `LLM_API_KEY`, `ADMIN_PASSWORD` and `AGENT_PASSWORD` and sets the rest: 512 MB RAM, so `RAG_BACKEND=lite`; the
+  service sleeps after 15 minutes without traffic; the disk is wiped on every restart; outbound SMTP is blocked;
+  *Run evaluation* is switched off. When this was deployed (21 November 2026) Render asked for a card to verify
+  the account before it would create even a free service, which is why the demo is on Railway.
 - **Any Docker host with 2 GB RAM or more** (a VPS, Cloud Run, Hugging Face Spaces on a paid plan):
   `docker compose up --build` or the Dockerfile as is, with `RAG_BACKEND=auto` for the embedding model and
   cross-encoder reranker. On Hugging Face add `sdk: docker` and `app_port: 8000` to the Space README; creating

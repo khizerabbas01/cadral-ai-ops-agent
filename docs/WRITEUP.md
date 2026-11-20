@@ -116,8 +116,14 @@ sent back to the model once, and if it is still unbacked the customer gets a han
 
 ## 6. Known gaps
 
-- Not deployed yet. The free route is Render's free plan (512 MB, sleeps after 15 idle minutes, disk wiped on
-  restart, no outbound SMTP); Hugging Face Docker Spaces now need a paid plan.
+- Deployed on Railway's 30-day free trial (<https://cadral-ai-ops-agent-production.up.railway.app>, live since
+  21 November 2026); it stops when the trial ends around mid-December unless it is moved. The other free routes
+  did not work out: Render asked for a card before creating a free service, Koyeb requires one, and Hugging Face
+  Docker Spaces need a paid plan.
+- The live demo runs lite retrieval (BM25 + LSA vectors + heuristic reranker). A question phrased far from the
+  documents' wording can miss: "How many days do I have to return an item?" gets the cited 30-day answer, while
+  "How long do I have to return an item?" retrieves the wrong sections and the agent says it does not know. The
+  embedding model and cross-encoder are there for this case, but that path is still unmeasured.
 - The fine-tune comparison has not been run (no GPU on the build machine). The LLM-mode eval has been run once,
   with lite retrieval; the ONNX embedding + cross-encoder path is unmeasured.
 - Groq's free tier allows about one full eval run a day on top of normal testing (8K tokens/min, 1,000
