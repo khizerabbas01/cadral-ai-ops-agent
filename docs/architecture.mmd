@@ -1,0 +1,28 @@
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 40}}}%%
+flowchart TB
+  %% Source of docs/architecture-light.svg and docs/architecture-dark.svg (Mermaid 11.4.1, SVG text labels).
+  %% Declaration order steers the layout: the learning loop first keeps the request path in one
+  %% column, and the escalation agent first puts the shared-memory arrow on its side of the box.
+  %% Labels are rendered as Markdown, so no line may start with "+", "-" or a number and a dot.
+  LEARN[Learning loop:<br/>examples, prompt rules,<br/>fine-tune dataset]
+  subgraph AG[Specialist agents]
+    X[Escalation agent]
+    O[Orders agent]
+    S[Support agent]
+  end
+  LEARN --> S & O
+  CH[Channels:<br/>web chat, Telegram,<br/>email via IMAP or webhook] -->|ingest: persist message| Q[(Job queue<br/>retries + dead-letter)]
+  Q --> R{{Router agent<br/>LLM or fine-tuned 1.5B<br/>and risk guardrails}}
+  R -->|policy / product| S
+  R -->|order action| O
+  R -->|angry / risky| X
+  MEM[(Shared memory:<br/>transcript, summary,<br/>customer history)] <--> AG
+  S --> RAG[Hybrid search:<br/>BM25 + vectors,<br/>RRF, rerank,<br/>confidence gate]
+  O --> TOOLS[Tools:<br/>get_order_status,<br/>issue_refund, cancel_order,<br/>update_shipping_address,<br/>and two more]
+  X --> HQ[Slack alert +<br/>human queue<br/>with summary]
+  RAG --> KB[(24 docs:<br/>PDF, HTML, MD, CSV)]
+  TOOLS --> DB[(Orders DB +<br/>audit log)]
+  RAG & TOOLS & HQ --> REP[Reply + trace + cost,<br/>sent on the same channel]
+  REP --> DASH[Dashboard:<br/>live stream, trace,<br/>approval queue, analytics]
+  DASH -->|feedback| LEARN
+  CRON[Daily scheduler] --> RPT[Management report email]

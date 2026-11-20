@@ -25,34 +25,12 @@ from corrections and reports to management.
 
 ## Architecture
 
-```mermaid
-%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 40}}}%%
-flowchart TB
-  %% Declaration order steers the layout: the learning loop first keeps the request path in one
-  %% column, and the escalation agent first puts the shared-memory arrow on its side of the box.
-  LEARN[Learning loop:<br/>examples, prompt rules,<br/>fine-tune dataset]
-  subgraph AG[Specialist agents]
-    X[Escalation agent]
-    O[Orders agent]
-    S[Support agent]
-  end
-  LEARN --> S & O
-  CH[Channels:<br/>web chat, Telegram,<br/>email via IMAP or webhook] -->|ingest: persist message| Q[(Job queue<br/>retries + dead-letter)]
-  Q --> R{{Router agent<br/>LLM or fine-tuned 1.5B<br/>+ risk guardrails}}
-  R -->|policy / product| S
-  R -->|order action| O
-  R -->|angry / risky| X
-  MEM[(Shared memory:<br/>transcript, summary,<br/>customer history)] <--> AG
-  S --> RAG[Hybrid search:<br/>BM25 + vectors,<br/>RRF, rerank,<br/>confidence gate]
-  O --> TOOLS[Tools:<br/>get_order_status,<br/>issue_refund, cancel_order,<br/>update_shipping_address,<br/>and two more]
-  X --> HQ[Slack alert +<br/>human queue<br/>with summary]
-  RAG --> KB[(24 docs:<br/>PDF, HTML, MD, CSV)]
-  TOOLS --> DB[(Orders DB +<br/>audit log)]
-  RAG & TOOLS & HQ --> REP[Reply + trace + cost,<br/>sent on the same channel]
-  REP --> DASH[Dashboard:<br/>live stream, trace,<br/>approval queue, analytics]
-  DASH -->|feedback| LEARN
-  CRON[Daily scheduler] --> RPT[Management report email]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <img src="docs/architecture-light.svg" alt="Architecture: messages from web chat, Telegram and email are saved to a durable job queue. A router agent sends each one to the Support, Orders or Escalation agent, which share one memory. Support answers through hybrid search over 24 documents, Orders calls tools on the orders database, Escalation alerts Slack and the human queue. Every reply, trace and cost reaches the dashboard, and dashboard feedback feeds a learning loop back into the Support and Orders agents. A daily scheduler emails the management report.">
+</picture>
+
+Diagram source: [`docs/architecture.mmd`](docs/architecture.mmd) (Mermaid).
 
 **Stack:** Python 3.12, FastAPI, SQLAlchemy (SQLite locally, Postgres via `DATABASE_URL`), Groq free tier
 (`openai/gpt-oss-120b` for answers, `openai/gpt-oss-20b` for routing) through an OpenAI-compatible client (Gemini / OpenRouter
