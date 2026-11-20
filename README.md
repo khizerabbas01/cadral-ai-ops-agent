@@ -26,28 +26,31 @@ from corrections and reports to management.
 ## Architecture
 
 ```mermaid
-flowchart LR
-  subgraph Channels
-    W[Web chat] --> ING
-    E[Email IMAP / webhook] --> ING
-    T[Telegram] --> ING
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 40}}}%%
+flowchart TB
+  %% Declaration order steers the layout: the learning loop first keeps the request path in one
+  %% column, and the escalation agent first puts the shared-memory arrow on its side of the box.
+  LEARN[Learning loop:<br/>examples, prompt rules,<br/>fine-tune dataset]
+  subgraph AG[Specialist agents]
+    X[Escalation agent]
+    O[Orders agent]
+    S[Support agent]
   end
-  ING[ingest: persist message] --> Q[(Job queue<br/>retries + dead-letter)]
-  Q --> R{Router agent<br/>LLM or fine-tuned 1.5B<br/>+ risk guardrails}
-  R -->|policy / product| S[Support agent]
-  R -->|order action| O[Orders agent]
-  R -->|angry / risky| X[Escalation agent]
-  S --> RAG[Hybrid search<br/>BM25 + vectors -> RRF -> rerank<br/>confidence gate]
-  RAG --> KB[(24 docs:<br/>PDF, HTML, MD, CSV)]
-  O --> TOOLS[Tools: get_order_status, issue_refund,<br/>cancel_order, update_shipping_address, ...]
-  TOOLS --> DB[(Orders DB + audit log)]
-  X --> SL[Slack alert] & H[Human queue with summary]
-  MEM[(Shared memory:<br/>transcript, summary,<br/>customer history)] <--> S & O & X
-  S & O & X --> REP[Reply + trace + cost] --> OUT[Deliver via channel]
-  REP --> DASH[Dashboard: live stream, trace,<br/>approval queue, analytics]
-  DASH -->|feedback| LEARN[Learning loop:<br/>examples, prompt rules, dataset]
   LEARN --> S & O
-  LEARN -.-> FT[Fine-tune dataset]
+  CH[Channels:<br/>web chat, Telegram,<br/>email via IMAP or webhook] -->|ingest: persist message| Q[(Job queue<br/>retries + dead-letter)]
+  Q --> R{{Router agent<br/>LLM or fine-tuned 1.5B<br/>+ risk guardrails}}
+  R -->|policy / product| S
+  R -->|order action| O
+  R -->|angry / risky| X
+  MEM[(Shared memory:<br/>transcript, summary,<br/>customer history)] <--> AG
+  S --> RAG[Hybrid search:<br/>BM25 + vectors,<br/>RRF, rerank,<br/>confidence gate]
+  O --> TOOLS[Tools:<br/>get_order_status,<br/>issue_refund, cancel_order,<br/>update_shipping_address,<br/>and two more]
+  X --> HQ[Slack alert +<br/>human queue<br/>with summary]
+  RAG --> KB[(24 docs:<br/>PDF, HTML, MD, CSV)]
+  TOOLS --> DB[(Orders DB +<br/>audit log)]
+  RAG & TOOLS & HQ --> REP[Reply + trace + cost,<br/>sent on the same channel]
+  REP --> DASH[Dashboard:<br/>live stream, trace,<br/>approval queue, analytics]
+  DASH -->|feedback| LEARN
   CRON[Daily scheduler] --> RPT[Management report email]
 ```
 
