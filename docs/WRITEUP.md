@@ -137,5 +137,7 @@ sent back to the model once, and if it is still unbacked the customer gets a han
 - The demo video is not recorded.
 - A fresh install has no history, so the dashboard charts start empty. `scripts/seed_demo.py` replays sample
   messages through the real pipeline with back-dated timestamps; the dashboard labels that data as sample traffic.
-- The dashboard was checked in a headless browser at 1672x941, 1366x768 and 390x844 and its flows were driven
-  end to end (hold for review, approve, edit, refund approval, run evaluation); it has not been user-tested.
+- The dashboard's flows (hold for review, approve, edit, refund approval, run evaluation) were driven end to
+  end in a headless browser before the visual restyle of 21 November 2026. After the restyle every page, tab,
+  menu and dialog was opened and checked by screenshot at 1729x677 (the main dashboard also at 1672x941,
+  1366x611 and 390x844), but the flows were not submitted again. It has not been user-tested.
