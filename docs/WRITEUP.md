@@ -120,10 +120,15 @@ sent back to the model once, and if it is still unbacked the customer gets a han
   21 November 2026); it stops when the trial ends around mid-December unless it is moved. The other free routes
   did not work out: Render asked for a card before creating a free service, Koyeb requires one, and Hugging Face
   Docker Spaces need a paid plan.
-- The live demo runs lite retrieval (BM25 + LSA vectors + heuristic reranker). A question phrased far from the
-  documents' wording can miss: "How many days do I have to return an item?" gets the cited 30-day answer, while
-  "How long do I have to return an item?" retrieves the wrong sections and the agent says it does not know. The
-  embedding model and cross-encoder are there for this case, but that path is still unmeasured.
+- The live demo runs the embedding model and cross-encoder (`RAG_BACKEND=auto`), a path the eval suite has not
+  been run on. What exists is a spot check of seven paraphrased questions on the live demo. Five of them are
+  covered by the documents: lite retrieval answered two and half-answered a third (for example it said "I don't
+  know" to "How long do I have to return an item?", though it answers "How many days ..."), the full models
+  answered four. Both missed "Can I spread the cost over a few months?" (the Klarna instalments section), and both
+  correctly declined the two questions the documents do not cover.
+- The first run with those models took 7 to 9 seconds per reply: ONNX Runtime sized its thread pools from the
+  host's core count while the container may use 2 vCPU. With the pools limited to the CPU quota
+  (`RAG_THREADS`, or the cgroup limit) the same questions take about 2 seconds.
 - The fine-tune comparison has not been run (no GPU on the build machine). The LLM-mode eval has been run once,
   with lite retrieval; the ONNX embedding + cross-encoder path is unmeasured.
 - Groq's free tier allows about one full eval run a day on top of normal testing (8K tokens/min, 1,000

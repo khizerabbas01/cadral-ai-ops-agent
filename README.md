@@ -162,13 +162,14 @@ The image is self-contained (API + frontend + knowledge base, plus the ONNX mode
 
 - **Railway (the live demo):** connect the GitHub repository to a service; Railway finds the Dockerfile on its
   own. Service variables: `LLM_PROVIDER=groq`, `LLM_API_KEY`, `ADMIN_PASSWORD`, `AGENT_PASSWORD`,
-  `RAG_BACKEND=lite`, `DEMO_SEED_ON_BOOT=true`, `ALLOW_EVAL_RUN=false` and `PORT=8000`; health check path
-  `/api/health`. Railway hands service variables to the Docker build, so `RAG_BACKEND=lite` also skips the model
-  download there. Watch paths `/backend/**`, `/frontend/**`, `/finetune/**` and `/Dockerfile` keep documentation
-  commits from restarting the demo. It runs on Railway's 30-day trial (no card, about $5 of usage); the
-  container's disk is not persistent, so sample traffic and the recorded eval runs are reloaded on every deploy.
-  The trial allows 1 GB per service; the demo still uses `lite` retrieval (BM25 + LSA vectors + heuristic
-  reranker), the configuration the eval numbers were measured with.
+  `RAG_BACKEND=auto`, `DEMO_SEED_ON_BOOT=true`, `ALLOW_EVAL_RUN=false` and `PORT=8000`; health check path
+  `/api/health`. Railway hands service variables to the Docker build, so the same `RAG_BACKEND` value decides
+  whether the models are baked into the image. Watch paths `/backend/**`, `/frontend/**`, `/finetune/**` and
+  `/Dockerfile` keep documentation commits from restarting the demo. It runs on Railway's 30-day trial (no card,
+  about $5 of usage); the container's disk is not persistent, so sample traffic and the recorded eval runs are
+  reloaded on every deploy. The trial allows 1 GB and 2 vCPU per service, which is enough for the embedding
+  model and cross-encoder: the demo uses about 650 MB and answers a help-centre question in about 2 seconds.
+  The eval numbers above were measured with `lite` retrieval; the write-up has a spot check of the two.
 - **Render free plan:** [`render.yaml`](render.yaml) is a ready blueprint (*New -> Blueprint*) that asks for
   `LLM_API_KEY`, `ADMIN_PASSWORD` and `AGENT_PASSWORD` and sets the rest: 512 MB RAM, so `RAG_BACKEND=lite`; the
   service sleeps after 15 minutes without traffic; the disk is wiped on every restart; outbound SMTP is blocked;
