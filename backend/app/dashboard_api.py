@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import textwrap
 import threading
 from collections import Counter, deque
 from datetime import datetime, timedelta
@@ -41,6 +42,11 @@ def _pct_change(cur: float | None, prev: float | None) -> float | None:
     return round((cur - prev) / prev * 100, 1)
 
 
+def _clip(text: str | None, width: int) -> str:
+    """One-line preview: whitespace collapsed, cut at a word boundary and marked with an ellipsis."""
+    return textwrap.shorten(text or "", width=width, placeholder="…")
+
+
 # ====================================================================== health + approvals
 def system_status(db: Session) -> dict:
     dead = db.scalar(select(func.count()).select_from(Job).where(Job.status == "dead")) or 0
@@ -67,15 +73,15 @@ def approval_items(db: Session, user: User) -> list[dict]:
     items: list[dict] = []
     for r in db.scalars(select(Refund).where(Refund.status == "pending_approval").order_by(Refund.id.desc()).limit(100)):
         items.append({"type": "refund", "id": r.id, "title": "High-value refund request",
-                      "subtitle": f"Order {r.order_id} · £{r.amount_gbp:,.2f} · {r.reason[:80]}",
+                      "subtitle": f"Order {r.order_id} · £{r.amount_gbp:,.2f} · {_clip(r.reason, 80)}",
                       "link": "#/agents/orders", "created_at": _iso(r.created_at), "can_decide": user.role == "admin"})
     for m in db.scalars(select(Message).where(Message.status == "pending_review").order_by(Message.id.desc()).limit(100)):
         items.append({"type": "reply", "id": m.id, "title": "AI reply awaiting review",
-                      "subtitle": f"{(m.agent or 'AI').title()} agent · {m.content[:90]}",
+                      "subtitle": f"{(m.agent or 'AI').title()} agent · {_clip(m.content, 90)}",
                       "link": f"#/conversations/{m.conversation_id}", "created_at": _iso(m.created_at), "can_decide": True})
     for e in db.scalars(select(Escalation).where(Escalation.status == "open").order_by(Escalation.id.desc()).limit(100)):
         items.append({"type": "escalation", "id": e.id, "title": "Escalation to human", "severity": e.severity,
-                      "subtitle": f"{e.severity.title()} severity · {e.reason[:90]}",
+                      "subtitle": f"{e.severity.title()} severity · {_clip(e.reason, 90)}",
                       "link": f"#/conversations/{e.conversation_id}", "created_at": _iso(e.created_at), "can_decide": True})
     return sorted(items, key=lambda i: i["created_at"], reverse=True)
 
