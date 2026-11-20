@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import events, llm
-from .agents import AgentResult, Trace, escalation_agent, orders_agent, route, support_agent
+from .agents import AgentResult, Trace, clean_reply, escalation_agent, orders_agent, route, support_agent
 from .config import settings
 from .db import SessionLocal
 from .jobs import enqueue
@@ -120,6 +120,7 @@ def process_inbound(message_id: int, *, final_attempt: bool = False) -> dict | N
             trace_row.error = str(e)[:500]
             enqueue(db, "slack_alert", {"kind": "error", "text": f":warning: LLM failure on conversation #{conv.id}: {str(e)[:200]}"})
 
+        result.reply = clean_reply(result.reply)
         status = "pending_review" if (settings.reply_mode == "review" or result.needs_review) else "sent"
         if result.escalated:
             status = "sent"  # the holding message always goes out; the human takes over from here
@@ -153,7 +154,7 @@ def process_inbound(message_id: int, *, final_attempt: bool = False) -> dict | N
         trace_row.prompt_tokens, trace_row.completion_tokens, trace_row.cost_usd = int(pt), int(ct), float(cost)
         trace_row.latency_ms = int((time.perf_counter() - t0) * 1000)
         trace_row.resolved_by_ai = (not result.escalated and status == "sent" and not result.meta.get("idk")
-                                    and not result.meta.get("refund_pending_approval"))
+                                    and not result.meta.get("refund_pending_approval") and not result.meta.get("needs_human"))
         db.commit()
         if status == "sent":
             enqueue_delivery(db, reply)
@@ -208,7 +209,7 @@ def _maybe_summarise(db: Session, conv: Conversation) -> None:
         mem = build_memory(db, conv.id)
         res = llm.chat([{"role": "system", "content": "Summarise this support conversation in 2 sentences for other agents: the customer's issue, what has been done, what is outstanding."},
                         {"role": "user", "content": mem.transcript(30)}], purpose="memory:summary",
-                       model=settings.llm_fast_model, max_tokens=120)
+                       model=settings.llm_fast_model, max_tokens=300)
         conv.summary = res.content.strip()
         db.commit()
     except Exception:

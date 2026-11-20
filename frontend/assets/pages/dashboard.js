@@ -33,7 +33,7 @@ export async function Dashboard(ctx) {
     subtitle: "Multi-Agent Operations • RAG • Fine-Tuning • Automation • Monitoring" });
   let days = [7, 14, 30].includes(Number(localStorage.getItem("dashboard.days"))) ? Number(localStorage.getItem("dashboard.days")) : 7;
   const body = h("div", { class: "stack" }, loading());
-  const sample = h("span", { class: "sample-note", hidden: true, title: "Replayed sample messages handled by the real pipeline (scripts/seed_demo.py)" },
+  const sample = h("span", { class: "sample-note", hidden: true, title: "Sample messages replayed through the pipeline in offline mode (no LLM calls) so the charts have a history. New conversations are answered live." },
     icon("info", 15), "Includes replayed sample traffic");
   const range = h("select", { "aria-label": "Date range", value: String(days), onchange: () => {
     days = Number(range.value);

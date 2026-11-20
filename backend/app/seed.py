@@ -2,16 +2,17 @@
 from __future__ import annotations
 
 import csv
+import json
 import random
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
 from .auth import hash_password
-from .config import settings
+from .config import BASE_DIR, settings
 from .db import Base, engine, session_scope
-from .models import Customer, Order, Product, PromptRule, User, utcnow
+from .models import Customer, EvalRun, Order, Product, PromptRule, User, utcnow
 
 CUSTOMERS = [
     ("Emma Clarke", "emma.clarke@example.co.uk", "standard"),
@@ -81,6 +82,21 @@ def _make_order(oid, cust, status, lines, carrier, days_ago, products, rng) -> O
                  estimated_delivery=eta, created_at=created, updated_at=created)
 
 
+def _import_eval_history(s) -> None:
+    """A new database starts with the evaluation runs recorded in evals/history.json: real runs of this code,
+    kept with their original date and mode, so a fresh deployment can show its measured quality straight away."""
+    path = BASE_DIR / "evals" / "history.json"
+    if not path.exists() or s.scalar(select(EvalRun.id).limit(1)) is not None:
+        return
+    try:
+        runs = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return
+    for r in runs:
+        s.add(EvalRun(score=r["score"], routing_accuracy=r.get("routing_accuracy", 0.0), details=r.get("details") or {},
+                      created_at=datetime.fromisoformat(r["created_at"])))
+
+
 def seed() -> None:
     Base.metadata.create_all(engine)
     if not (settings.docs_dir / "products.csv").exists():
@@ -95,6 +111,7 @@ def seed() -> None:
                     print(f"[seed] generated password for {role} {email}: {pw}  (set {role.upper()}_PASSWORD to choose your own)")
                 s.add(User(email=email, name=name, role=role, password_hash=hash_password(pw)))
         products = seed_products(s)
+        _import_eval_history(s)
         if s.scalar(select(Customer).limit(1)) is not None:
             return
         customers = []

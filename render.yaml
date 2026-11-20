@@ -1,4 +1,5 @@
-# Render blueprint (free web service). Secrets are entered in the Render dashboard, never committed.
+# Render blueprint for a free demo instance (New -> Blueprint -> pick this repository).
+# The three "sync: false" values are typed into the Render dashboard when the blueprint is created - never committed.
 services:
   - type: web
     name: cadral-ops-agent
@@ -6,35 +7,23 @@ services:
     plan: free
     healthCheckPath: /api/health
     envVars:
-      - key: JWT_SECRET
-        generateValue: true
       - key: LLM_PROVIDER
         value: groq
-      - key: LLM_API_KEY
+      - key: LLM_API_KEY          # free key from console.groq.com/keys
         sync: false
-      - key: DATABASE_URL        # free Postgres from Neon/Supabase so data survives restarts
+      - key: ADMIN_PASSWORD       # dashboard password for admin@demo.co.uk
         sync: false
-      - key: ADMIN_PASSWORD
+      - key: AGENT_PASSWORD       # dashboard password for agent@demo.co.uk
         sync: false
-      - key: AGENT_PASSWORD
-        sync: false
-      - key: SLACK_WEBHOOK_URL
-        sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_WEBHOOK_SECRET
+      - key: JWT_SECRET
         generateValue: true
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
-        sync: false
-      - key: IMAP_HOST
-        sync: false
-      - key: REPORT_RECIPIENTS
-        sync: false
-      - key: PUBLIC_BASE_URL
-        sync: false
-      - key: RAG_BACKEND         # "lite" keeps memory under Render's 512 MB; use "auto" on bigger hosts
+      - key: RAG_BACKEND          # "lite" keeps memory inside the free plan's 512 MB (no ONNX models)
         value: lite
+      - key: DEMO_SEED_ON_BOOT    # the free plan's disk is wiped on every restart, so sample traffic is reloaded on boot
+        value: "true"
+      - key: ALLOW_EVAL_RUN       # the eval suite needs a second Python process - too much for 512 MB
+        value: "false"
+
+# Optional, add in the Render dashboard when needed: SLACK_WEBHOOK_URL, TELEGRAM_BOT_TOKEN + TELEGRAM_WEBHOOK_SECRET,
+# and DATABASE_URL (a free Neon Postgres) if conversations must survive restarts.
+# Render's free plan blocks outbound SMTP, so the email channel and the emailed daily report need a paid plan there.

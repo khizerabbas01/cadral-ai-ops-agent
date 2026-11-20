@@ -378,5 +378,9 @@ class KnowledgeBase:
     def confident(self, hits: list[Hit]) -> bool:
         return bool(hits) and hits[0].score >= self.threshold
 
+    def borderline(self, hits: list[Hit]) -> bool:
+        """Under the answer threshold but not unrelated - worth letting a model read the passages and decline."""
+        return bool(hits) and self.threshold * 0.5 <= hits[0].score < self.threshold
+
 
 kb = KnowledgeBase()

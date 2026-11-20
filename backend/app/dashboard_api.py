@@ -44,8 +44,9 @@ def _pct_change(cur: float | None, prev: float | None) -> float | None:
 # ====================================================================== health + approvals
 def system_status(db: Session) -> dict:
     dead = db.scalar(select(func.count()).select_from(Job).where(Job.status == "dead")) or 0
+    # 429s are free-tier throttling that the client retries - they are not a health problem
     llm_errors = db.scalar(select(func.count()).select_from(LLMCall).where(
-        LLMCall.ok.is_(False), LLMCall.created_at >= utcnow() - timedelta(hours=1))) or 0
+        LLMCall.ok.is_(False), LLMCall.error.not_like("429%"), LLMCall.created_at >= utcnow() - timedelta(hours=1))) or 0
     issues = []
     if not kb.ready:
         issues.append("Knowledge base is still indexing")
@@ -354,12 +355,17 @@ def evals(db: Session = Depends(get_db), user: User = Depends(current_user)):
     return {"runs": [_run_summary(r) for r in reversed(runs)], "latest": latest,
             "dataset_cases": _line_count(BASE_DIR / "evals" / "dataset.jsonl"),
             "running": _eval_running(), "started_at": _eval["started_at"], "exit_code": _eval["exit_code"],
-            "output": list(_eval["log"])[-30:], "finetune": _finetune(), "can_run": user.role == "admin"}
+            "output": list(_eval["log"])[-30:], "finetune": _finetune(),
+            "can_run": user.role == "admin" and settings.allow_eval_run,
+            "run_disabled": None if settings.allow_eval_run else "Running the suite is switched off on this host (it needs a "
+                            "second process). Run it from the command line; recorded runs are shown below."}
 
 
 @router.post("/evals/run")
 def run_evals(user: User = Depends(require_admin)):
     """Runs the same one-command suite as `python -m evals.run` in a child process (its own temporary database)."""
+    if not settings.allow_eval_run:
+        raise HTTPException(403, "Running evaluations from the dashboard is switched off on this host")
     with _eval_lock:
         if _eval_running():
             raise HTTPException(409, "An evaluation run is already in progress")

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .models import AuditLog, Customer, Order, Refund, utcnow
 
-ORDER_ID_RE = re.compile(r"\bUK[-\s]?(\d{5})\b", re.I)
+ORDER_ID_RE = re.compile(r"\bUK[-‐-―\s]?(\d{5})\b", re.I)  # also typographic hyphens/dashes pasted by customers
 
 
 def normalise_order_id(raw: str) -> str:
@@ -40,7 +40,7 @@ def _order_summary(o: Order) -> dict:
     return {"order_id": o.id, "status": o.status, "items": o.items, "total_gbp": o.total_gbp,
             "refunded_gbp": o.refunded_gbp, "carrier": o.carrier, "tracking_number": o.tracking_number,
             "estimated_delivery": o.estimated_delivery.strftime("%A %d %B %Y") if o.estimated_delivery else None,
-            "shipping_address": o.shipping_address, "placed_on": o.created_at.strftime("%d %B %Y")}
+            "shipping_address": o.shipping_address, "order_placed_on": o.created_at.strftime("%d %B %Y")}
 
 
 def _get_order(ctx: ToolContext, order_id: str, email: str | None = None) -> Order:
@@ -76,7 +76,7 @@ def list_customer_orders(ctx: ToolContext, email: str | None = None) -> dict:
         raise ToolError("Customer not identified. Ask for the order number or account email.")
     orders = ctx.db.scalars(select(Order).where(Order.customer_id == cid).order_by(Order.created_at.desc()).limit(10))
     return {"orders": [{"order_id": o.id, "status": o.status, "total_gbp": o.total_gbp,
-                        "placed_on": o.created_at.strftime("%d %b %Y"),
+                        "order_placed_on": o.created_at.strftime("%d %b %Y"),
                         "items": ", ".join(i["name"] for i in o.items)} for o in orders]}
 
 

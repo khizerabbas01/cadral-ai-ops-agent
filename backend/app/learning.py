@@ -90,7 +90,7 @@ def distil_rule(db: Session, fb: Feedback) -> PromptRule | None:
                                                         "human_action": fb.action,
                                                         "human_reply": fb.final_reply,
                                                         "reason": fb.reason})}],
-                purpose="learning:distil_rule", model=settings.llm_fast_model, max_tokens=120)
+                purpose="learning:distil_rule", model=settings.llm_fast_model, max_tokens=300)
             rule_text = (data.get("rule") or "").strip()
         except Exception:
             log.exception("rule distillation failed")

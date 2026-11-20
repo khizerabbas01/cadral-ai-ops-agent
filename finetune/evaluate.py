@@ -2,7 +2,7 @@
 Reports accuracy, macro-F1, latency and cost, and writes finetune/results/results.{json,md}.
 
     python finetune/evaluate.py --adapter finetune/out/router-lora            # base + fine-tuned
-    GROQ_API_KEY=... python finetune/evaluate.py --adapter ... --api-model llama-3.3-70b-versatile
+    GROQ_API_KEY=... python finetune/evaluate.py --adapter ... --api-model openai/gpt-oss-120b
 """
 from __future__ import annotations
 
@@ -74,14 +74,15 @@ def run_local(base: str, adapter: str | None, test: list[dict]) -> dict:
 def run_api(model: str, test: list[dict]) -> dict:
     import httpx
     key = os.environ.get("GROQ_API_KEY") or os.environ["LLM_API_KEY"]
-    price = {"llama-3.3-70b-versatile": (0.59, 0.79), "llama-3.1-8b-instant": (0.05, 0.08)}.get(model, (0.5, 1.0))
+    price = {"openai/gpt-oss-120b": (0.15, 0.60), "openai/gpt-oss-20b": (0.075, 0.30)}.get(model, (0.5, 1.0))
     preds, lat, cost = [], [], 0.0
     with httpx.Client(timeout=30) as c:
         for r in test:
             for attempt in range(5):
                 t0 = time.perf_counter()
                 resp = c.post("https://api.groq.com/openai/v1/chat/completions", headers={"Authorization": f"Bearer {key}"},
-                              json={"model": model, "messages": r["messages"][:2], "temperature": 0, "max_tokens": 4})
+                              # gpt-oss models reason before answering, so leave room for that before the one-word label
+                              json={"model": model, "messages": r["messages"][:2], "temperature": 0, "max_tokens": 400})
                 if resp.status_code == 429:
                     time.sleep(2 ** attempt)
                     continue

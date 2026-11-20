@@ -28,14 +28,18 @@ _stop = threading.Event()
 _threads: list[threading.Thread] = []
 
 
-# Job kinds that are dropped instead of queued. Offline tools (the sample-traffic loader) set this so that
-# replayed sample messages can never send a real email, Telegram message or Slack alert.
-SUPPRESSED_KINDS: set[str] = set()
+_local = threading.local()
+
+
+def suppress_for_this_thread(kinds: set[str]) -> None:
+    """Drop these job kinds when they are enqueued from the current thread. The sample-traffic loader uses it so
+    replayed messages can never send a real email, Telegram message or Slack alert; other threads are unaffected."""
+    _local.suppressed = set(kinds)
 
 
 def enqueue(db: Session, kind: str, payload: dict, *, max_attempts: int = 5, delay_s: float = 0) -> Job:
     job = Job(kind=kind, payload=payload, max_attempts=max_attempts, next_run_at=utcnow() + timedelta(seconds=delay_s))
-    if kind in SUPPRESSED_KINDS:
+    if kind in getattr(_local, "suppressed", ()):
         return job  # never persisted, so no worker can pick it up
     db.add(job)
     db.flush()

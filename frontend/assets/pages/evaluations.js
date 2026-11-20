@@ -30,6 +30,7 @@ async function Runs(view, ctx) {
         h("div", {}, h("h2", {}, "Automated evaluation"), h("p", {}, `${d.dataset_cases} sample messages with expected outcomes, run through the real pipeline on an isolated database.`)),
         h("div", { class: "right" }, d.running ? pill("Running…", "blue") : null,
           d.can_run ? h("button", { class: "btn primary", disabled: d.running, onclick: start }, icon("play", 15), "Run evaluation") : null)),
+      d.run_disabled && state.user.role === "admin" ? h("div", { class: "note" }, icon("info", 18), h("span", {}, d.run_disabled)) : null,
       d.running || (d.exit_code != null && d.exit_code !== 0)
         ? card({ title: d.running ? "Run in progress" : "The last run did not finish", iconName: "cpu", body: h("pre", {}, d.output.join("\n") || "Starting…") }) : null,
       !L ? card({ body: empty("No evaluation has been recorded yet. Run it here, or from the command line: cd backend && python -m evals.run", "bars") }) : [

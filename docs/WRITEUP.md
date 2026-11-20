@@ -10,7 +10,7 @@ Every inbound message, whatever the channel, follows one path:
 2. **Queue** - worker threads claim jobs with an optimistic lock. Failures retry with exponential backoff
    (5 s, 10 s, 20 s ... capped at 10 min); exhausted jobs go to a dead-letter state, raise a Slack alert and
    can be replayed from the dashboard. Jobs left `running` by a crash are requeued on boot.
-3. **Router** - a cheap model (Llama 3.1 8B, or the fine-tuned 1.5B classifier when `CLASSIFIER_URL` is set)
+3. **Router** - a cheap model (gpt-oss-20b on Groq, or the fine-tuned 1.5B classifier when `CLASSIFIER_URL` is set)
    picks `support`, `orders` or `escalation`. A deterministic risk scorer (legal threats, chargebacks, safety
    incidents, abuse, prompt-injection phrases) runs alongside it and **overrides** the model at high risk.
 4. **Specialist agent**
@@ -20,7 +20,8 @@ Every inbound message, whatever the channel, follows one path:
      citations are present.
    - *Orders*: a tool-calling loop over six real functions. Each tool validates ownership and state, runs in a
      savepoint, and writes an audit-log row. Refunds over £150 are queued for an admin; duplicate refunds within
-     15 minutes are deduplicated so a retried job can never pay twice.
+     15 minutes are deduplicated so a retried job can never pay twice. A reply that claims an action is checked
+     against the tool calls of that turn, so the agent cannot tell a customer something happened when it did not.
    - *Escalation*: writes a structured handoff (summary, severity, reason, suggested action), opens an
      escalation, fires a Slack alert and sends an empathetic holding reply. The AI then stays out of that
      conversation until a human resolves it.
@@ -57,7 +58,7 @@ This machine has no GPU, so the numbers have **not** been produced yet and none 
 |---|---|---|---|---|
 | Qwen2.5-1.5B base (zero-shot) | _pending_ | | | |
 | Qwen2.5-1.5B + LoRA | _pending_ | | | |
-| Llama 3.3 70B (API) | _pending_ | | | |
+| gpt-oss-120b on Groq (large API model) | _pending_ | | | |
 
 **When to use which**
 
@@ -79,11 +80,23 @@ where reasoning is needed. The feedback loop exports human-corrected replies as 
 | Mode | Overall | Routing | Support | IDK | Orders | Escalation | Adversarial |
 |---|---|---|---|---|---|---|---|
 | Offline fallbacks (no LLM) | **95.8%** | 100% | 89.8% | 100% | 100% | 100% | 100% |
-| Groq LLM + cross-encoder | _not yet measured (needs an API key)_ | | | | | | |
+| Groq free tier: gpt-oss-120b + gpt-oss-20b router, lite retrieval (2026-11-20) | **98.5%** | 98.5% | 97.2% | 100% | 98.6% | 100% | 100% |
+| Same models + ONNX embeddings and cross-encoder | _not measured (no Docker or ONNX runtime on the build machine)_ | | | | | | |
 
 The six partial failures offline are all retrieval/extraction misses of the heuristic reranker (for example
-the Klarna instalment detail and the Oak Coffee Table price) - exactly what the cross-encoder and the LLM are
-there for. Latency and cost per message are printed by the same command.
+the Klarna instalment detail and the Oak Coffee Table price); with the LLM reading the retrieved passages they
+pass. The live run took 2.2 s per message on average (p95 6.8 s, which includes free-tier rate-limit waits) and
+cost $0.019 in total at list price: $0.0003 and about 1,700 tokens per message.
+
+The two live misses are worth knowing. A general question ("how quickly do I have to report an item damaged in
+transit?") was routed to the Orders agent, which answered correctly but without a citation because it has no
+retrieval tool. And an address change on a dispatched order was refused correctly from shared memory without a
+fresh `get_order_status` call. The fix for the first is to give the Orders agent a help-centre search tool.
+
+Live testing before that run also caught a failure the offline suite cannot see: asked to refund a £799 order,
+the model replied that the refund had been "logged" without calling the tool. The Orders agent now checks every
+reply that claims a refund, cancellation or address change against that turn's tool calls; an unbacked claim is
+sent back to the model once, and if it is still unbacked the customer gets a handoff instead of a promise.
 
 ## 5. What breaks at scale, and the fix
 
@@ -103,8 +116,12 @@ there for. Latency and cost per message are printed by the same command.
 
 ## 6. Known gaps
 
-- Not deployed yet: needs a hosting account and API keys (steps in the README).
-- Fine-tune comparison and the LLM-mode eval score have not been run (no GPU or API key on the build machine).
+- Not deployed yet. The free route is Render's free plan (512 MB, sleeps after 15 idle minutes, disk wiped on
+  restart, no outbound SMTP); Hugging Face Docker Spaces now need a paid plan.
+- The fine-tune comparison has not been run (no GPU on the build machine). The LLM-mode eval has been run once,
+  with lite retrieval; the ONNX embedding + cross-encoder path is unmeasured.
+- Groq's free tier allows about one full eval run a day on top of normal testing (8K tokens/min, 1,000
+  requests/day per model), so sample traffic is loaded in offline mode rather than through the LLM.
 - Slack, SMTP/IMAP and Telegram integrations are implemented but were not exercised against the real services.
 - The demo video is not recorded.
 - A fresh install has no history, so the dashboard charts start empty. `scripts/seed_demo.py` replays sample

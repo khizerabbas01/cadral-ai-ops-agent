@@ -46,12 +46,26 @@ from app.orchestrator import ingest  # noqa: E402
 from app.rag import kb  # noqa: E402
 from app.seed import seed  # noqa: E402
 
+HISTORY = HERE / "history.json"
+
+
+def export_history(eng) -> None:
+    """Write the latest recorded runs to evals/history.json. It is committed with the code, and a new database
+    imports it on first boot (app/seed.py), so a fresh deployment shows the measured runs with their dates."""
+    with Session(eng) as s:
+        runs = s.scalars(select(EvalRun).order_by(EvalRun.id.desc()).limit(6)).all()[::-1]
+        HISTORY.write_text(json.dumps([{"created_at": r.created_at.isoformat(), "score": r.score,
+                                        "routing_accuracy": r.routing_accuracy, "details": r.details} for r in runs], indent=1),
+                           encoding="utf-8")
+
+
 IDK_RE = re.compile(r"i (don't|do not) know|don't have (that )?information|not sure|unable to find|couldn't find (that|any)", re.I)
 
 
 def grade(case: dict, reply: Message, trace: Trace, db: Session) -> dict[str, bool]:
     checks: dict[str, bool] = {"route": trace.route == case["route"]}
-    text = reply.content
+    # grade the wording, not the typography: curly quotes and dashes from a model count as their plain forms
+    text = reply.content.translate({0x2018: "'", 0x2019: "'", 0x201C: '"', 0x201D: '"', 0x2013: "-", 0x2014: "-"})
     tools_ok = [s["title"].split("(")[0] for s in trace.steps if s["type"] == "tool_call"]
     for i, alt in enumerate(case.get("tools", [])):
         checks[f"tool:{alt}"] = any(t in alt.split("|") for t in tools_ok)
@@ -90,14 +104,26 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="category filter: support|idk|orders|escalation|adversarial")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--ids", help="comma-separated case ids, e.g. ord-07,esc-01")
     ap.add_argument("--verbose", "-v", action="store_true")
+    ap.add_argument("--show", action="store_true", help="print every reply, not only failures")
+    ap.add_argument("--no-record", action="store_true", help="do not save this run to the dashboard's eval history")
     ap.add_argument("--min-score", type=float, default=0.0)
     ap.add_argument("--delay", type=float, default=float(os.environ.get("EVAL_DELAY", "0")), help="seconds between cases (free-tier rate limits)")
+    ap.add_argument("--export-history", action="store_true", help="only rewrite evals/history.json from the recorded runs")
     args = ap.parse_args()
+    if args.export_history:
+        eng = create_engine((MAIN_DB_URL or f"sqlite:///{BASE_DIR / 'data' / 'app.db'}").replace("postgres://", "postgresql://", 1))
+        export_history(eng)
+        print(f"wrote {HISTORY}")
+        return 0
 
     cases = [json.loads(l) for l in (HERE / "dataset.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     if args.only:
         cases = [c for c in cases if c["cat"] == args.only]
+    if args.ids:
+        wanted = {i.strip() for i in args.ids.split(",")}
+        cases = [c for c in cases if c["id"] in wanted]
     cases = cases[: args.limit] if args.limit else cases
 
     seed()
@@ -138,8 +164,9 @@ def main() -> int:
         by_cat[r["cat"]].append(r)
         mark = "PASS" if r["passed"] else ("PART" if r["score"] > 0 else "FAIL")
         print(f"  [{mark}] {r['id']:<8} {r['score']:.2f}  route={r['route']}")
-        if args.verbose and not r["passed"]:
-            print(f"         failed: {[k for k, v in r['checks'].items() if not v]}\n         reply: {r['reply'][:220]}")
+        if args.show or (args.verbose and not r["passed"]):
+            print(f"         failed: {[k for k, v in r['checks'].items() if not v]}\n         reply: {r['reply'][:320]}"
+                  f"\n         {r['tokens']} tokens, {r['latency_ms']} ms")
         if args.delay:
             time.sleep(args.delay)
 
@@ -168,7 +195,11 @@ def main() -> int:
     print(f"\n  EVAL SCORE: {score * 100:.1f}%   ({summary['pass_rate'] * 100:.0f}% of cases fully passed)")
     print("=" * 64 + f"\n  details -> {out / 'latest.json'}")
 
-    # Record the score in the main database so the dashboard can chart accuracy over time
+    # Record the score in the main database so the dashboard can chart accuracy over time.
+    # Filtered runs are debugging aids, not a score for the whole suite, so they are never recorded.
+    if args.only or args.limit or args.ids or args.no_record:
+        print("  (partial run - not recorded in the eval history)")
+        return 0 if score >= args.min_score else 1
     try:
         url = MAIN_DB_URL or f"sqlite:///{BASE_DIR / 'data' / 'app.db'}"
         eng = create_engine(url.replace("postgres://", "postgresql://", 1))
@@ -180,6 +211,7 @@ def main() -> int:
         with Session(eng) as s:
             s.add(EvalRun(score=score, routing_accuracy=routing, details=summary | {"results": compact}))
             s.commit()
+        export_history(eng)
     except Exception as e:
         print(f"  (could not record run in main DB: {e})")
     return 0 if score >= args.min_score else 1

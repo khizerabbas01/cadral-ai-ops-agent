@@ -35,11 +35,22 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("api")
 
 
+def _warm_up() -> None:
+    """Background start-up work: build the search index, then (demo hosts only) load sample traffic once."""
+    kb.build()
+    if settings.should_seed_demo:
+        try:
+            from .demo import load_sample_traffic
+            load_sample_traffic(log=log.info)
+        except Exception:
+            log.exception("sample traffic could not be loaded")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     seed()
     runtime_settings.load()  # admin-changed settings (reply mode, refund limit) override the env defaults
-    threading.Thread(target=kb.build, name="kb-build", daemon=True).start()
+    threading.Thread(target=_warm_up, name="warm-up", daemon=True).start()
     jobs.start_workers(3)
     jobs.start_scheduler()
     import os

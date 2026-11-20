@@ -3,14 +3,14 @@
 {"id": "sup-03", "cat": "support", "text": "How many days do I have to return an item?", "route": "support", "contains": ["30 days"], "doc": "returns-policy.pdf"}
 {"id": "sup-04", "cat": "support", "text": "Can I return a pillow that I've already opened?", "route": "support", "contains": ["cannot|can't|not accept|unable|unless|hygiene"], "doc": "returns-policy.pdf"}
 {"id": "sup-05", "cat": "support", "text": "How long does a refund take to show on my card once you've issued it?", "route": "support", "contains": ["5 to 7|5-7|5–7"], "doc": "refund-policy.pdf"}
-{"id": "sup-06", "cat": "support", "text": "Do you accept Klarna and how does it work?", "route": "support", "contains": ["3 (interest-free )?instal"], "doc": "payment-methods.html"}
-{"id": "sup-07", "cat": "support", "text": "What guarantee do electrical items come with?", "route": "support", "contains": ["2[- ]year"], "doc": "warranty-policy.pdf"}
-{"id": "sup-08", "cat": "support", "text": "How long is the guarantee on furniture frames?", "route": "support", "contains": ["5[- ]year"], "doc": "warranty-policy.pdf"}
+{"id": "sup-06", "cat": "support", "text": "Do you accept Klarna and how does it work?", "route": "support", "contains": ["(3|three) (interest-free )?instal"], "doc": "payment-methods.html"}
+{"id": "sup-07", "cat": "support", "text": "What guarantee do electrical items come with?", "route": "support", "contains": ["(2|two)[- ]year"], "doc": "warranty-policy.pdf"}
+{"id": "sup-08", "cat": "support", "text": "How long is the guarantee on furniture frames?", "route": "support", "contains": ["(5|five)[- ]year"], "doc": "warranty-policy.pdf"}
 {"id": "sup-09", "cat": "support", "text": "How much is shipping to the USA?", "route": "support", "contains": ["19\\.99"], "doc": "international-shipping.html"}
 {"id": "sup-10", "cat": "support", "text": "How long does delivery to EU countries take?", "route": "support", "contains": ["5 to 10|5-10|5–10"], "doc": "international-shipping.html"}
 {"id": "sup-11", "cat": "support", "text": "How long are gift cards valid for?", "route": "support", "contains": ["24 months"], "doc": "gift-cards.html"}
 {"id": "sup-12", "cat": "support", "text": "Do you price match? Within how many days of purchase?", "route": "support", "contains": ["14 days"], "doc": "price-match.html"}
-{"id": "sup-13", "cat": "support", "text": "How do I earn Lane Points?", "route": "support", "contains": ["1 (lane )?point"], "doc": "loyalty-programme.pdf"}
+{"id": "sup-13", "cat": "support", "text": "How do I earn Lane Points?", "route": "support", "contains": ["(1|one) (lane )?point"], "doc": "loyalty-programme.pdf"}
 {"id": "sup-14", "cat": "support", "text": "What are 100 Lane Points worth?", "route": "support", "contains": ["£5"], "doc": "loyalty-programme.pdf"}
 {"id": "sup-15", "cat": "support", "text": "How do I reset my password?", "route": "support", "contains": ["forgot password|reset link"], "doc": "faq-account.md"}
 {"id": "sup-16", "cat": "support", "text": "What are your customer service hours on Saturday?", "route": "support", "contains": ["9am to 5pm|9am-5pm|9am – 5pm|9 ?am"], "doc": "contact-us.html"}

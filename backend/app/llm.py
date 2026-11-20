@@ -20,6 +20,8 @@ log = logging.getLogger("llm")
 # USD per 1M tokens (input, output). Free tiers cost $0 but we track list-price equivalent so the
 # dashboard shows what the system would cost on a paid plan.
 PRICES: dict[str, tuple[float, float]] = {
+    "openai/gpt-oss-120b": (0.15, 0.60),   # Groq model page, checked 2026-11-20
+    "openai/gpt-oss-20b": (0.075, 0.30),   # Groq model page, checked 2026-11-20
     "llama-3.3-70b-versatile": (0.59, 0.79),
     "llama-3.1-8b-instant": (0.05, 0.08),
     "meta-llama/llama-4-scout-17b-16e-instruct": (0.11, 0.34),
@@ -77,7 +79,7 @@ RETRYABLE = {408, 409, 429, 500, 502, 503, 504}
 
 
 def chat(messages: list[dict], *, purpose: str, model: str | None = None, tools: list[dict] | None = None,
-         tool_choice: str | None = None, temperature: float = 0.2, max_tokens: int = 700,
+         tool_choice: str | None = None, temperature: float = 0.2, max_tokens: int = 900,
          json_mode: bool = False, on_token: Callable[[str], None] | None = None,
          trace_id: int | None = None, max_retries: int = 4) -> LLMResult:
     """Call the chat model. Streams tokens to `on_token` when given. Retries 429/5xx/timeouts with
@@ -87,6 +89,9 @@ def chat(messages: list[dict], *, purpose: str, model: str | None = None, tools:
     model = model or settings.llm_model
     body: dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature,
                             "max_tokens": max_tokens}
+    if "gpt-oss" in model:  # reasoning models: keep the hidden reasoning short and out of the response payload
+        body["reasoning_effort"] = settings.llm_reasoning_effort
+        body["include_reasoning"] = False
     if tools:
         body["tools"] = tools
         body["tool_choice"] = tool_choice or "auto"
@@ -181,7 +186,7 @@ def chat(messages: list[dict], *, purpose: str, model: str | None = None, tools:
 
 
 def chat_json(messages: list[dict], *, purpose: str, model: str | None = None, trace_id: int | None = None,
-              max_tokens: int = 400) -> tuple[dict, LLMResult]:
+              max_tokens: int = 500) -> tuple[dict, LLMResult]:
     res = chat(messages, purpose=purpose, model=model, json_mode=True, temperature=0.0,
                max_tokens=max_tokens, trace_id=trace_id)
     text = res.content.strip()

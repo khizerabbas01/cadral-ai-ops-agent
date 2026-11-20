@@ -52,7 +52,7 @@ flowchart LR
 ```
 
 **Stack:** Python 3.12, FastAPI, SQLAlchemy (SQLite locally, Postgres via `DATABASE_URL`), Groq free tier
-(Llama 3.3 70B for answers, Llama 3.1 8B for routing) through an OpenAI-compatible client (Gemini / OpenRouter
+(`openai/gpt-oss-120b` for answers, `openai/gpt-oss-20b` for routing) through an OpenAI-compatible client (Gemini / OpenRouter
 also work), fastembed (bge-small + MiniLM cross-encoder, ONNX on CPU), APScheduler. The frontend is plain ES
 modules with hand-drawn SVG charts, served by the API - no Node build step.
 
@@ -102,13 +102,16 @@ First boot seeds 12 customers, 40 orders, the product catalogue and the knowledg
 A new install has no history, so the charts are empty. To give a demo something to show:
 
 ```bash
-cd backend && python -m scripts.seed_demo         # ~150 conversations over 14 days; add --delay 2 on a free LLM tier
+cd backend && python -m scripts.seed_demo         # ~150 conversations over 14 days, offline mode (no LLM calls)
 python -m evals.run                               # records an evaluation score for the dashboard
 ```
 
-Every sample message is replayed through the **real** pipeline (routing, retrieval, tool calls, cost and
-latency are genuine); only the timestamps are spread over the past days. No human reviews are invented and
-nothing is emailed or posted. While this data is present the dashboard shows "Includes replayed sample traffic".
+The sample messages go through the normal pipeline - routing, retrieval, tool calls and database writes all
+happen - with the agents in offline mode, so loading takes seconds and uses none of a free-tier quota
+(`--live` uses the configured LLM instead). Only the timestamps are spread over the past days. No human reviews
+are invented and nothing is emailed or posted. While this data is present the dashboard shows "Includes replayed
+sample traffic". Hosted demos with a throwaway disk load it automatically on first boot (`DEMO_SEED_ON_BOOT`),
+together with the evaluation runs recorded in [`backend/evals/history.json`](backend/evals/history.json).
 
 ### Demo script
 
@@ -135,7 +138,13 @@ content, citations, "I don't know" behaviour, escalation and the resulting DB st
 | Mode | Score | Routing | Notes |
 |---|---|---|---|
 | Offline fallbacks (no LLM, LSA vectors + heuristic reranker) | **95.8%** (59/65 fully passed) | 100% | measured; orders 18/18, escalation 12/12, idk 5/5, support 21/27 |
-| Groq Llama 3.3 70B + bge-small + cross-encoder | _run with your key and record here_ | | not yet measured |
+| Groq free tier: `gpt-oss-120b` answers, `gpt-oss-20b` routes, lite retrieval | **98.5%** (63/65 fully passed) | 98.5% | measured 2026-11-20; support 26/27, orders 17/18, escalation 12/12, idk 5/5, adversarial 3/3; 2.2 s average reply (p95 6.8 s), $0.0003 and ~1,700 tokens per message |
+| Same models + ONNX embeddings and cross-encoder reranker (the Docker default) | _not measured_ | | the machine used for the runs could not install the ONNX runtime |
+
+The two live misses: a general "how quickly must I report damage?" question was routed to the Orders agent,
+which gave the right answer but without a citation; and one address change on a dispatched order was refused
+correctly from shared memory without a fresh tool call. Every recorded run is kept in
+[`backend/evals/history.json`](backend/evals/history.json).
 
 `python -m scripts.smoke_test` runs a 19-check API test against a running server with a fresh database (auth,
 roles, both channels, refund in DB, escalation, feedback loop, analytics, report, dashboard, runtime settings).
@@ -145,7 +154,7 @@ roles, both channels, refund in DB, escalation, feedback loop, analytics, report
 Open [`finetune/finetune_router_colab.ipynb`](finetune/finetune_router_colab.ipynb) on a free Colab T4
 (about 10 minutes): builds the dataset (412 train / 24 val / 57 test, no template shared between train and
 test), trains the LoRA adapter, then prints the comparison table (accuracy, macro-F1, p50/p95 latency,
-cost per 1k requests) for base vs fine-tuned vs Llama 3.3 70B. Results land in `finetune/results/` and then
+cost per 1k requests) for base vs fine-tuned vs a large API model (gpt-oss-120b on Groq). Results land in `finetune/results/` and then
 appear on the *Evaluations -> Fine-tuning* page. Serve the adapter with `finetune/serve.py` and set
 `CLASSIFIER_URL` to make it the production router.
 
@@ -168,12 +177,18 @@ are stored in the database and override the environment defaults.
 
 ## Deployment
 
-The image is self-contained (API + frontend + knowledge base + ONNX models).
+The image is self-contained (API + frontend + knowledge base, plus the ONNX models unless built for `lite`).
 
-- **Hugging Face Spaces (Docker, free 16 GB RAM - recommended):** create a Docker Space, push this repo, set the
-  secrets in *Settings -> Variables and secrets*, and set `PORT=7860`.
-- **Render (free):** *New -> Blueprint* and point it at this repo ([`render.yaml`](render.yaml)). The free plan has
-  512 MB RAM, so the blueprint sets `RAG_BACKEND=lite`; use a free Neon Postgres for `DATABASE_URL`.
+- **Render free plan (the live demo):** push the repo to GitHub, then in Render choose *New -> Blueprint* and pick
+  it. [`render.yaml`](render.yaml) asks for three values - `LLM_API_KEY`, `ADMIN_PASSWORD`, `AGENT_PASSWORD` - and
+  sets the rest. What the free plan means in practice: 512 MB RAM, so the blueprint uses `RAG_BACKEND=lite`
+  (BM25 + LSA vectors + heuristic reranker instead of the ONNX models); the service sleeps after 15 minutes
+  without traffic and takes about a minute to wake; the disk is wiped on every restart, so sample traffic and the
+  recorded eval runs are reloaded on boot; outbound SMTP is blocked; and *Run evaluation* is switched off there.
+- **Any Docker host with 2 GB RAM or more** (a VPS, Cloud Run, Hugging Face Spaces on a paid plan):
+  `docker compose up --build` or the Dockerfile as is, with `RAG_BACKEND=auto` for the embedding model and
+  cross-encoder reranker. On Hugging Face add `sdk: docker` and `app_port: 8000` to the Space README; creating
+  Docker Spaces there currently needs a PRO subscription, so it is not a free option.
 - **Telegram webhook:** `https://api.telegram.org/bot<TOKEN>/setWebhook?url=<PUBLIC_BASE_URL>/api/channels/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>`
 
 The dashboard loads the Inter typeface from Google Fonts and falls back to system fonts when offline.

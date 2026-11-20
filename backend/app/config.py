@@ -3,10 +3,19 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
+
+_thread = threading.local()
+
+
+def force_offline(active: bool) -> None:
+    """Make the *current thread* run the agents on their deterministic fallbacks (no LLM calls).
+    The sample-traffic loader uses it; every other thread keeps using the configured LLM."""
+    _thread.offline = active
 
 
 def _load_dotenv() -> None:
@@ -42,15 +51,20 @@ class Settings:
     jwt_secret: str = field(default_factory=lambda: _env("JWT_SECRET") or secrets.token_urlsafe(48))
     jwt_expiry_hours: int = field(default_factory=lambda: int(_env("JWT_EXPIRY_HOURS", "12")))
     cors_origins: str = field(default_factory=lambda: _env("CORS_ORIGINS", "*"))
-    public_base_url: str = field(default_factory=lambda: _env("PUBLIC_BASE_URL", "http://localhost:8000"))
+    # Render sets RENDER_EXTERNAL_URL for every web service, so links in alerts and reports work there without setup
+    public_base_url: str = field(default_factory=lambda: _env("PUBLIC_BASE_URL", _env("RENDER_EXTERNAL_URL", "http://localhost:8000")))
 
     # --- LLM (OpenAI-compatible; Groq free tier by default) ---
     llm_provider: str = field(default_factory=lambda: _env("LLM_PROVIDER", "groq"))  # groq | gemini | openai | mock
     llm_api_key: str = field(default_factory=lambda: _env("LLM_API_KEY", _env("GROQ_API_KEY", "")))
     llm_base_url: str = field(default_factory=lambda: _env("LLM_BASE_URL", ""))
-    llm_model: str = field(default_factory=lambda: _env("LLM_MODEL", "llama-3.3-70b-versatile"))
-    llm_fast_model: str = field(default_factory=lambda: _env("LLM_FAST_MODEL", "llama-3.1-8b-instant"))
+    # Groq retired llama-3.3-70b-versatile / llama-3.1-8b-instant for free and developer keys on 2026-08-16;
+    # these are the replacements its deprecation notice names (both support tool use and JSON mode).
+    llm_model: str = field(default_factory=lambda: _env("LLM_MODEL", "openai/gpt-oss-120b"))
+    llm_fast_model: str = field(default_factory=lambda: _env("LLM_FAST_MODEL", "openai/gpt-oss-20b"))
     llm_timeout: float = field(default_factory=lambda: float(_env("LLM_TIMEOUT", "45")))
+    # gpt-oss models reason before answering; "low" keeps that short, which matters on the free tier's 8K tokens/min
+    llm_reasoning_effort: str = field(default_factory=lambda: _env("LLM_REASONING_EFFORT", "low"))
 
     # Optional fine-tuned classifier endpoint (e.g. HF Inference / Ollama running the LoRA-merged model)
     classifier_url: str = field(default_factory=lambda: _env("CLASSIFIER_URL", ""))
@@ -95,6 +109,9 @@ class Settings:
     agent_password: str = field(default_factory=lambda: _env("AGENT_PASSWORD"))
 
     enable_scheduler: bool = field(default_factory=lambda: _bool("ENABLE_SCHEDULER", True))
+    demo_seed_on_boot: str = field(default_factory=lambda: _env("DEMO_SEED_ON_BOOT", "auto"))  # true | false | auto
+    # The dashboard's "Run evaluation" button starts a second Python process; turn it off on very small hosts.
+    allow_eval_run: bool = field(default_factory=lambda: _bool("ALLOW_EVAL_RUN", True))
 
     @property
     def resolved_llm_base_url(self) -> str:
@@ -109,7 +126,17 @@ class Settings:
 
     @property
     def llm_enabled(self) -> bool:
-        return self.llm_provider != "mock" and bool(self.llm_api_key)
+        return not getattr(_thread, "offline", False) and self.llm_provider != "mock" and bool(self.llm_api_key)
+
+    @property
+    def should_seed_demo(self) -> bool:
+        """Load sample traffic on first boot? "auto" says yes only on throwaway demo hosts (Hugging Face Spaces,
+        Render) that use the default SQLite file - never when a real database is configured."""
+        value = self.demo_seed_on_boot.strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+        demo_host = bool(os.environ.get("SPACE_ID") or os.environ.get("RENDER"))
+        return value == "auto" and demo_host and not os.environ.get("DATABASE_URL")
 
 
 settings = Settings()
