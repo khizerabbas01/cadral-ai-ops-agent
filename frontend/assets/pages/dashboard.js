@@ -16,10 +16,10 @@ function deltaText(k) {
 function kpiTile({ iconName, label, value, k, versus }) {
   let delta;
   if (k.delta == null) {
-    delta = [h("b", { class: "flat" }, "–"), "no earlier data to compare"];
+    delta = [h("b", { class: "flat" }, "–"), h("span", { class: "kpi-versus" }, "no earlier data to compare")];
   } else {
     const up = k.delta > 0, tone = k.delta === 0 ? "flat" : up === k.higher_is_better ? "good" : "bad";
-    delta = [h("b", { class: tone }, k.delta === 0 ? null : icon(up ? "arrowUp" : "arrowDown", 15), deltaText(k)), versus];
+    delta = [h("b", { class: tone }, k.delta === 0 ? null : icon(up ? "arrowUp" : "arrowDown", 15), deltaText(k)), h("span", { class: "kpi-versus" }, versus)];
   }
   return h("section", { class: "card kpi" },
     h("div", { class: "tile" }, icon(iconName, 30)),

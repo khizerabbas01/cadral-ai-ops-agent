@@ -50,7 +50,7 @@ export function Shell({ page, title, subtitle, flush = false }) {
 
   const root = h("div", { class: "app" },
     h("aside", { class: "sidebar" },
-      h("a", { class: "brand", href: "#/dashboard" }, logoMark(), "CADRAL AI"),
+      h("a", { class: "brand", href: "#/dashboard" }, logoMark(), h("span", { class: "brand-name" }, "CADRAL ", h("b", {}, "AI"))),
       h("nav", { class: "nav", "aria-label": "Main" }, NAV.map(([id, label, iconName]) =>
         h("a", { href: `#/${id}`, class: id === page ? "on" : "", "aria-current": id === page ? "page" : null },
           icon(iconName, 24), label, id === "conversations" ? badge : null))),

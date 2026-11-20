@@ -26,7 +26,7 @@ export function Login() {
   const feature = (text) => h("li", {}, icon("check", 18), text);
   set(document.getElementById("app"), h("div", { class: "login" },
     h("div", { class: "login-brand" },
-      h("div", { class: "brand", style: "padding:0" }, logoMark(40), "CADRAL AI"),
+      h("div", { class: "brand" }, logoMark(40), h("span", { class: "brand-name" }, "CADRAL ", h("b", {}, "AI"))),
       h("div", {},
         h("h1", {}, "Autonomous AI Operations Agent"),
         h("p", {}, "One AI system that answers customers, takes real actions on orders, hands risky cases to people and learns from every correction."),
