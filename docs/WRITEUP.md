@@ -1,0 +1,113 @@
+# Write-up: Autonomous AI Operations Agent
+
+## 1. Architecture
+
+Every inbound message, whatever the channel, follows one path:
+
+1. **Ingest** - the channel adapter (web chat API, IMAP poller / email webhook, Telegram webhook) calls
+   `ingest()`, which commits the message and a `process_inbound` job in one transaction. Nothing external has
+   been called yet, so nothing can be lost.
+2. **Queue** - worker threads claim jobs with an optimistic lock. Failures retry with exponential backoff
+   (5 s, 10 s, 20 s ... capped at 10 min); exhausted jobs go to a dead-letter state, raise a Slack alert and
+   can be replayed from the dashboard. Jobs left `running` by a crash are requeued on boot.
+3. **Router** - a cheap model (Llama 3.1 8B, or the fine-tuned 1.5B classifier when `CLASSIFIER_URL` is set)
+   picks `support`, `orders` or `escalation`. A deterministic risk scorer (legal threats, chargebacks, safety
+   incidents, abuse, prompt-injection phrases) runs alongside it and **overrides** the model at high risk.
+4. **Specialist agent**
+   - *Support*: hybrid retrieval (BM25 + bge-small vectors, fused with Reciprocal Rank Fusion, top 12 reranked
+     by a cross-encoder). If the best reranked score is below a threshold the agent answers "I don't know"
+     without calling the LLM. Otherwise the LLM answers only from numbered sources; a post-check enforces that
+     citations are present.
+   - *Orders*: a tool-calling loop over six real functions. Each tool validates ownership and state, runs in a
+     savepoint, and writes an audit-log row. Refunds over £150 are queued for an admin; duplicate refunds within
+     15 minutes are deduplicated so a retried job can never pay twice.
+   - *Escalation*: writes a structured handoff (summary, severity, reason, suggested action), opens an
+     escalation, fires a Slack alert and sends an empathetic holding reply. The AI then stays out of that
+     conversation until a human resolves it.
+5. **Shared memory** - all agents receive the same context: transcript, rolling summary, customer tier, recent
+   orders, agent-written notes, previous conversations and whether the customer was escalated before.
+6. **Trace** - every step (route decision and why, retrieval hits with ranks, each tool call with arguments
+   and result, guardrail triggers, injected examples) is stored with tokens, cost and latency, streamed live
+   to the dashboard over SSE.
+
+## 2. Trade-offs
+
+| Decision | Why | Cost |
+|---|---|---|
+| DB-backed queue instead of Redis/Celery | one container, free tier, transactional with the message insert | polling latency (~1 s idle), not suited to >50 msg/s |
+| SSE instead of WebSockets | one-way streaming is all the UI needs; works through any proxy | one connection per open conversation |
+| In-memory BM25 + numpy vectors | 131 chunks - a vector DB would be overhead | rebuilds on boot; does not scale past ~100k chunks |
+| Deterministic guardrails around the LLM | safety routing and refund limits must not depend on model mood | some false-positive escalations (cheap) |
+| Fallbacks without an LLM | the system degrades instead of going down when the provider is rate-limited | weaker answers in fallback mode |
+| No-build frontend (ES modules, hand-drawn SVG charts) | zero toolchain, tiny image, nothing to break in CI | less ergonomic than React for a larger UI |
+| Two behaviour settings editable at runtime (reply mode, refund limit) | supervisors can tighten control without a redeploy; secrets stay in the environment | values are applied in process memory, so a second replica would need to reload them |
+| Auto-send by default, review optional | the brief asks for autonomy; `REPLY_MODE=review` flips it | wrong answers can reach customers before review |
+
+## 3. Fine-tuning
+
+**Task:** intent classification for the Router (3 labels). **Model:** Qwen2.5-1.5B-Instruct + QLoRA (rank 16,
+all attention and MLP projections, 3 epochs, loss only on the label token). **Data:** 412 train / 24 val /
+57 test messages generated from templates with noise (typos, casing, greetings) plus hard negatives; test
+templates never appear in training.
+
+**Results:** run `finetune/finetune_router_colab.ipynb` on a free T4 and paste `finetune/results/results.md` here.
+This machine has no GPU, so the numbers have **not** been produced yet and none are claimed.
+
+| Model | Accuracy | Macro-F1 | p50 latency | Cost / 1k requests |
+|---|---|---|---|---|
+| Qwen2.5-1.5B base (zero-shot) | _pending_ | | | |
+| Qwen2.5-1.5B + LoRA | _pending_ | | | |
+| Llama 3.3 70B (API) | _pending_ | | | |
+
+**When to use which**
+
+- **Fine-tuned small model** - narrow, high-volume, stable tasks with a fixed output space: routing, sentiment,
+  tone rewriting. Milliseconds on a small GPU, near-zero marginal cost, data stays in-house, behaviour is
+  consistent. Cannot learn new facts without retraining.
+- **RAG** - anything whose answer lives in documents that change: policies, prices, stock. Updating the
+  knowledge base is a re-index, not a training run, and answers are citable and auditable.
+- **Large API model** - open-ended reasoning, multi-step tool use, drafting nuanced replies, and the long tail
+  the small model was never trained on. Highest quality, highest latency and cost, rate limits.
+
+The system uses all three in that order of preference: small model to route, RAG to ground, large model only
+where reasoning is needed. The feedback loop exports human-corrected replies as the next training set.
+
+## 4. Eval scores
+
+65 cases through the full pipeline (`python -m evals.run`, or the *Run evaluation* button on the dashboard):
+
+| Mode | Overall | Routing | Support | IDK | Orders | Escalation | Adversarial |
+|---|---|---|---|---|---|---|---|
+| Offline fallbacks (no LLM) | **95.8%** | 100% | 89.8% | 100% | 100% | 100% | 100% |
+| Groq LLM + cross-encoder | _not yet measured (needs an API key)_ | | | | | | |
+
+The six partial failures offline are all retrieval/extraction misses of the heuristic reranker (for example
+the Klarna instalment detail and the Oak Coffee Table price) - exactly what the cross-encoder and the LLM are
+there for. Latency and cost per message are printed by the same command.
+
+## 5. What breaks at scale, and the fix
+
+| Breaks | When | Fix |
+|---|---|---|
+| SQLite single writer; job polling | >~20 msg/s | Postgres (already supported), `SELECT ... FOR UPDATE SKIP LOCKED`, then Redis Streams / SQS |
+| In-process SSE pub/sub | more than one API replica | Redis pub/sub or Postgres LISTEN/NOTIFY behind the same `events` interface |
+| In-memory index | >100k chunks or frequent doc updates | pgvector / Qdrant with incremental upserts; keep BM25 in Postgres FTS or OpenSearch |
+| Free-tier LLM rate limits | bursts | provider failover (already one fallback model), per-tenant token buckets, response caching for FAQs, the fine-tuned router removes one LLM call per message |
+| Scheduler inside the web process | multiple replicas send duplicate reports | separate worker deployment with a leader lock, or platform cron hitting the job endpoint |
+| Runtime settings and the eval runner live in one process | more than one replica | read settings from the database through a short cache; run evals as a queued job on a worker |
+| Dashboard queries scan the period's rows | hundreds of thousands of traces | daily roll-up tables refreshed by a job, indexed on `created_at` |
+| Prompt growth from learned rules/examples | hundreds of rules | retrieve top-k rules by similarity, periodically merge and prune, move stable ones into fine-tuning |
+| Feedback quality | many reviewers | require a reason on reject, review conflicting rules, hold-out evals gate every prompt/rule change in CI |
+| Refund abuse | adversarial customers | per-customer refund velocity limits, photo evidence step, lower auto-approval limit for new accounts |
+| PII in logs and traces | compliance review | redact emails/addresses before LLM calls and trace storage; retention policy; UK/EU region hosting |
+
+## 6. Known gaps
+
+- Not deployed yet: needs a hosting account and API keys (steps in the README).
+- Fine-tune comparison and the LLM-mode eval score have not been run (no GPU or API key on the build machine).
+- Slack, SMTP/IMAP and Telegram integrations are implemented but were not exercised against the real services.
+- The demo video is not recorded.
+- A fresh install has no history, so the dashboard charts start empty. `scripts/seed_demo.py` replays sample
+  messages through the real pipeline with back-dated timestamps; the dashboard labels that data as sample traffic.
+- The dashboard was checked in a headless browser at 1672x941, 1366x768 and 390x844 and its flows were driven
+  end to end (hold for review, approve, edit, refund approval, run evaluation); it has not been user-tested.
