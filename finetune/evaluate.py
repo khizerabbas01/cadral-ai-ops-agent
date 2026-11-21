@@ -74,12 +74,22 @@ def metrics(kind: str, name: str, test: list[dict], preds: list[str], lat: list[
             "measured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), **(extra or {})}
 
 
-def run_local(base: str, adapter: str | None, test: list[dict]) -> dict:
+def pick_dtype(name: str):
+    import torch
+    if name != "auto":
+        return {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[name]
+    if not torch.cuda.is_available():
+        return torch.float32
+    # bfloat16 is native from Ampere (compute capability 8) on; a T4 only emulates it and runs several times slower
+    return torch.bfloat16 if torch.cuda.get_device_capability(0)[0] >= 8 else torch.float16
+
+
+def run_local(base: str, adapter: str | None, test: list[dict], dtype_name: str = "auto") -> dict:
     import torch
     import transformers
     from transformers import AutoModelForCausalLM, AutoTokenizer
     cuda = torch.cuda.is_available()
-    dtype = torch.bfloat16 if cuda else torch.float32
+    dtype = pick_dtype(dtype_name)
     dtype_arg = "dtype" if int(transformers.__version__.split(".")[0]) >= 5 else "torch_dtype"  # renamed in transformers 5
     tok = AutoTokenizer.from_pretrained(base)
     model = AutoModelForCausalLM.from_pretrained(base, device_map="auto", **{dtype_arg: dtype})
@@ -206,12 +216,14 @@ def main() -> None:
     ap.add_argument("--adapter", default="finetune/out/router-lora")
     ap.add_argument("--api-model", default=None, choices=sorted(PRICES))
     ap.add_argument("--skip-local", action="store_true")
+    ap.add_argument("--dtype", default="auto", choices=["auto", "bf16", "fp16", "fp32"],
+                    help="precision of the local models; auto = the half-precision type the GPU runs natively")
     args = ap.parse_args()
     test = load_test()
     rows: list[dict] = []
     if not args.skip_local:
-        rows = save(run_local(args.base, None, test), test)
-        rows = save(run_local(args.base, args.adapter, test), test)
+        rows = save(run_local(args.base, None, test, args.dtype), test)
+        rows = save(run_local(args.base, args.adapter, test, args.dtype), test)
     if args.api_model:
         rows = save(run_api(args.api_model, test), test)
     print(table(rows))
