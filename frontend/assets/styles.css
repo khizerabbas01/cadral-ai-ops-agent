@@ -307,14 +307,15 @@ iframe.report { width: 100%; height: 26rem; border: 1px solid var(--line); borde
 
 /* ---------------------------------------------------------------- customer chat (public page) */
 .chatpage { min-height: 100vh; display: grid; place-items: center; padding: 1.2rem; background: linear-gradient(160deg, var(--green-900), #12624c); }
-.widget { width: min(28rem, 100%); height: min(44rem, 94vh); background: var(--panel); border-radius: 1.2rem; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, .35); }
+.widget { width: min(33rem, 100%); height: min(50rem, 94vh); background: var(--panel); border-radius: 1.2rem; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 24px 60px rgba(0, 0, 0, .35); }
 .widget > header { background: var(--green-700); color: #fff; padding: 1.1rem 1.2rem; } .widget > header b { font-size: 1.15rem; display: block; } .widget > header span { opacity: .88; font-size: 0.84rem; }
 .widget > header select { margin-top: 0.75rem; color: var(--ink); height: 2.3rem; padding: 0 0.7rem; }
 .widget .msgs { background: var(--bg); }
 .widget .bubble.me { align-self: flex-end; background: var(--green-700); border-color: var(--green-700); color: #fff; border-bottom-right-radius: 0.3rem; }
 .widget .bubble.them { align-self: flex-start; background: var(--panel); border-color: var(--line); cursor: default; border-bottom-left-radius: 0.3rem; border-bottom-right-radius: 1rem; }
-.chips { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.6rem 0.9rem; background: var(--bg); border-top: 1px solid var(--line); scrollbar-width: thin; }
-.chips .chip { flex: none; }
+/* the suggestions wrap so every one is visible: a sideways-scrolling row hid the refund and escalation examples */
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.6rem 0.9rem; background: var(--bg); border-top: 1px solid var(--line); flex: none; }
+.chips .chip { flex: none; max-width: 100%; }
 
 /* ---------------------------------------------------------------- responsive */
 @media (max-height: 760px) {
