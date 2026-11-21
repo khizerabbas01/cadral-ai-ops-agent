@@ -16,7 +16,7 @@ from corrections and reports to management.
 |---|---|
 | **Multi-agent** | `Router` -> `Support` (RAG) / `Orders` (function calling against the DB) / `Escalation` (human handoff + summary). All agents share one memory: conversation transcript + rolling summary + customer profile, orders, notes and past conversations. [`agents.py`](backend/app/agents.py), [`memory.py`](backend/app/memory.py) |
 | **Advanced RAG** | 24 documents (8 PDF, 10 HTML pages, 5 Markdown FAQs, 1 product CSV). Hybrid BM25 + dense vectors, fused with RRF, reranked by a cross-encoder. Numbered citations on every answer; a confidence gate answers "I don't know" instead of guessing. [`rag.py`](backend/app/rag.py) |
-| **Fine-tuning** | QLoRA fine-tune of Qwen2.5-1.5B as the router classifier, with a base-vs-fine-tuned-vs-API comparison script (accuracy, latency, cost). [`finetune/`](finetune) |
+| **Fine-tuning** | QLoRA fine-tune of Qwen2.5-1.5B as the router classifier, compared with the base model and a large API model on accuracy, latency and cost: 70.2% -> 98.2% on 57 held-out messages (gpt-oss-120b: 94.7%). [`finetune/`](finetune), [results](#fine-tuning) |
 | **Self-improving loop** | Approve / edit / reject on the dashboard -> feedback rows -> (1) few-shot examples retrieved by similarity, (2) LLM-distilled prompt guidelines, (3) a re-training JSONL export. [`learning.py`](backend/app/learning.py) |
 | **Automation** | Channels: web chat, email (IMAP poll or inbound webhook), Telegram. Daily management report by email (APScheduler). Slack alerts for escalations and system errors. Durable DB-backed job queue with backoff retries and a dead-letter state. [`jobs.py`](backend/app/jobs.py), [`channels.py`](backend/app/channels.py) |
 | **Dashboard** | JWT login with `admin` / `agent` roles, live conversations with token streaming (SSE), agent trace (which agent, which tools, why), human approval queue with approve / edit / reject, analytics. [`frontend/`](frontend) |
@@ -132,12 +132,26 @@ roles, both channels, refund in DB, escalation, feedback loop, analytics, report
 
 ## Fine-tuning
 
-Open [`finetune/finetune_router_colab.ipynb`](finetune/finetune_router_colab.ipynb) on a free Colab T4
-(about 10 minutes): builds the dataset (412 train / 24 val / 57 test, no template shared between train and
-test), trains the LoRA adapter, then prints the comparison table (accuracy, macro-F1, p50/p95 latency,
-cost per 1k requests) for base vs fine-tuned vs a large API model (gpt-oss-120b on Groq). Results land in `finetune/results/` and then
-appear on the *Evaluations -> Fine-tuning* page. Serve the adapter with `finetune/serve.py` and set
-`CLASSIFIER_URL` to make it the production router.
+The Router's job (pick `support`, `orders` or `escalation`) is also trained into a small open model,
+Qwen2.5-1.5B-Instruct with QLoRA. Measured on 57 held-out messages on 21 November 2026:
+
+| Model | Accuracy | Macro-F1 | p50 latency | Cost / 1k requests | Measured on |
+|---|---|---|---|---|---|
+| Qwen2.5-1.5B base (zero-shot) | 70.2% | 0.705 | 73 ms | $0.0080 | Colab T4 |
+| Qwen2.5-1.5B + LoRA (fine-tuned) | **98.2%** | 0.984 | 81 ms | $0.0081 | Colab T4 |
+| gpt-oss-120b on Groq (large API model) | 94.7% | 0.952 | 433 ms | $0.0386 | Groq API, over the internet |
+
+The two-message gap to the API model is within noise on a test set this small; the latency gap is not, and the
+cost figure assumes a busy GPU. [docs/WRITEUP.md](docs/WRITEUP.md#3-fine-tuning) says what these numbers do
+and do not show. The raw results, with every misclassified message, are in
+[`finetune/results/`](finetune/results) and on the *Evaluations -> Fine-tuning* page.
+
+To reproduce, open [`finetune/finetune_router_colab.ipynb`](finetune/finetune_router_colab.ipynb) on a free
+Colab T4 and run all cells (about 13 minutes, 10 of them training). It builds the dataset (412 train / 24 val /
+57 test, no template shared between train and test), trains the LoRA adapter and evaluates both local models.
+The API row needs no GPU: `python finetune/evaluate.py --skip-local --api-model openai/gpt-oss-120b` with a
+Groq key in `GROQ_API_KEY`. The live demo does not use the adapter (the free host has no GPU); serve it with
+`finetune/serve.py` and set `CLASSIFIER_URL` to make it the production router.
 
 ## Configuration
 

@@ -161,10 +161,11 @@ export function lineChart(points, { heightRem = 11, format = fmt.num, max, color
   }, heightRem);
 }
 
-/** Ranked horizontal bars, one hue, largest first. pairs: [[label, value]]. */
-export function rankedBars(pairs, { format = fmt.num, emptyText = "No data yet", color } = {}) {
+/** Ranked horizontal bars, one hue, largest first. pairs: [[label, value]].
+ *  A full bar stands for at least 1 (counts and ratios); scaleToLargest is for amounts that are all below 1. */
+export function rankedBars(pairs, { format = fmt.num, emptyText = "No data yet", color, scaleToLargest = false } = {}) {
   if (!pairs.length) return h("p", { class: "muted small" }, emptyText);
-  const max = Math.max(1, ...pairs.map(([, v]) => v));
+  const max = Math.max(scaleToLargest ? Number.MIN_VALUE : 1, ...pairs.map(([, v]) => v));
   return h("div", { class: "hbars" }, pairs.map(([label, value]) => h("div", { class: "hbar" },
     h("span", { class: "hbar-label", title: label }, label),
     h("span", { class: "hbar-track" }, h("i", { style: `width:${Math.max(1.5, (value / max) * 100)}%${color ? `;background:${color}` : ""}` })),

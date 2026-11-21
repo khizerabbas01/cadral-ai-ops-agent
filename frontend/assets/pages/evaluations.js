@@ -117,31 +117,72 @@ async function Learning(view, ctx) {
         { emptyText: "Approve, edit or reject a reply in Conversations to start teaching the system." }) }));
 }
 
+const FT_SHORT = { base: "Base model", finetuned: "Fine-tuned", api: "API model" };
+
+/** How the comparison was produced: the training record, the served path and what the latency and cost figures include. */
+function finetuneMethod(rows, t, accuracy) {
+  const tuned = rows.find((r) => r.kind === "finetuned"), apiRow = rows.find((r) => r.kind === "api");
+  const item = (label, text) => (text ? [h("dt", {}, label), h("dd", {}, text)] : null);
+  const took = (s) => (s >= 90 ? `${Math.round(s / 60)} minutes` : `${Math.round(s)} seconds`);
+  return h("dl", { class: "kv" },
+    item("Training run", t && `${t.method}, rank ${t.rank}, ${t.epochs} epochs over ${fmt.num(t.train_examples)} messages. ${fmt.num(t.trainable_parameters)} of ${fmt.num(t.total_parameters)} parameters were trained (${fmt.pct(t.trainable_parameters / t.total_parameters, 1)}), in ${took(t.train_runtime_s)} on a ${t.hardware}.`),
+    item("Validation loss", t?.val_loss_by_epoch?.length && `${t.val_loss_by_epoch.join(" → ")} after each epoch (${t.val_examples} messages from templates not used in training).`),
+    item("As served", tuned?.single_pass && `The classifier server reads the label from one forward pass instead of generating text: ${accuracy(tuned.single_pass.accuracy)} accuracy at ${tuned.single_pass.latency_ms_p50} ms (p50) on the same GPU.`),
+    item("API model timing", apiRow && `Measured end to end over the internet${apiRow.server_ms_p50 ? `; the provider's own queue and processing time was ${apiRow.server_ms_p50} ms (p50)` : ""}. About ${apiRow.tokens_per_request} tokens per request.`),
+    item("Cost basis", rows.length && "Local models: GPU time at $0.35 an hour (an on-demand T4), one request at a time, so it is the price at full load; an idle GPU still costs the whole hour. API model: tokens at list price."));
+}
+
+/** Every held-out message the fine-tuned or the API model got wrong, with what each model answered. */
+function finetuneErrors(rows) {
+  const wrong = (r) => new Map((r.errors || []).map((e) => [e.text, e]));
+  const maps = rows.map((r) => [r, wrong(r)]);
+  const texts = [...new Set(rows.filter((r) => r.kind !== "base").flatMap((r) => (r.errors || []).map((e) => e.text)))];
+  if (!texts.length) return null;
+  const gold = (text) => maps.map(([, m]) => m.get(text)).find(Boolean).gold;
+  return card({ title: "Messages the fine-tuned or API model got wrong", iconName: "alert", flush: true,
+    body: table(["Customer message", "Correct", ...rows.map((r) => FT_SHORT[r.kind] || r.model)], texts.map((text) => h("tr", {},
+      h("td", { style: "max-width:34rem" }, text), h("td", {}, agentPill(gold(text))),
+      maps.map(([, m]) => h("td", {}, m.has(text) ? pill(m.get(text).predicted.replace(/^./, (c) => c.toUpperCase()), "red") : pill("Correct", "green")))))) });
+}
+
 async function Finetune(view, ctx) {
   const d = (await api("/api/evals")).finetune;
   if (ctx.stale()) return;
   const rows = d.results?.rows || [];
   const use = (iconName, title, text) => h("section", { class: "card" }, h("div", { class: "card-body" },
     h("div", { class: "agent-head" }, h("div", { class: "tile sm" }, icon(iconName, 22)), h("h3", {}, title)), h("p", { class: "muted", style: "margin-top:.7rem" }, text)));
+  // The file stores accuracy rounded to four places; go back to the count so 56 of 57 reads 98.2%, not 98.3%
+  const size = d.results?.test_size || 1;
+  const exact = (v) => Math.round(v * size) / size;
+  const accuracy = (v) => fmt.pct(exact(v), 1);
+  const bars = (title, pick, format, opts = {}) => [h("div", { class: "subhead", style: opts.first ? "margin-top:0" : null }, title),
+    rankedBars(rows.map((r) => [FT_SHORT[r.kind] || r.model, pick(r)]), { format, scaleToLargest: opts.scaleToLargest })];
 
   set(view,
     h("div", { class: "page-head" }, h("div", {}, h("h2", {}, "Fine-tuned router"),
       h("p", {}, "A 1.5B open model (Qwen2.5 + QLoRA) trained to classify messages as support, orders or escalation, compared with the base model and a large API model."))),
     rows.length
       ? [card({ title: `Comparison on ${d.results.test_size} held-out messages`, iconName: "bars", flush: true,
-          body: table(["Model", ["Accuracy", "num"], ["Macro-F1", "num"], ["Invalid outputs", "num"], ["p50 latency", "num"], ["p95 latency", "num"], ["Cost per 1k requests", "num"]], rows.map((r) => h("tr", {},
-            h("td", { class: "strong" }, r.model), h("td", { class: "num" }, fmt.pct(r.accuracy, 1)), h("td", { class: "num" }, r.macro_f1.toFixed(3)), h("td", { class: "num" }, r.invalid_outputs),
-            h("td", { class: "num nowrap" }, `${r.latency_ms_p50} ms`), h("td", { class: "num nowrap" }, `${r.latency_ms_p95} ms`), h("td", { class: "num" }, fmt.usd(r.cost_usd_per_1k_requests, 4))))) }),
-          card({ title: "Accuracy", iconName: "target", body: rankedBars(rows.map((r) => [r.model, r.accuracy]), { format: (v) => fmt.pct(v, 1) }) })]
+          body: table(["Model", ["Accuracy", "num"], ["Macro-F1", "num"], ["Invalid outputs", "num"], ["p50 latency", "num"], ["p95 latency", "num"], ["Cost per 1k requests", "num"], "Measured on"], rows.map((r) => h("tr", {},
+            h("td", { class: "strong" }, r.model), h("td", { class: "num" }, accuracy(r.accuracy)), h("td", { class: "num" }, r.macro_f1.toFixed(3)), h("td", { class: "num" }, r.invalid_outputs),
+            h("td", { class: "num nowrap" }, `${r.latency_ms_p50} ms`), h("td", { class: "num nowrap" }, `${r.latency_ms_p95} ms`), h("td", { class: "num" }, fmt.usd(r.cost_usd_per_1k_requests, 4)),
+            h("td", { class: "muted nowrap" }, r.hardware || "–")))) }),
+          h("div", { class: "grid g2" },
+            card({ title: "Side by side", iconName: "target", body: [
+              bars("Accuracy", (r) => exact(r.accuracy), (v) => fmt.pct(v, 1), { first: true }),
+              bars("Median latency (lower is better)", (r) => r.latency_ms_p50, (v) => `${v} ms`),
+              bars("Cost per 1k requests (lower is better)", (r) => r.cost_usd_per_1k_requests, (v) => fmt.usd(v, 4), { scaleToLargest: true })] }),
+            card({ title: "How it was measured", iconName: "cpu", body: finetuneMethod(rows, d.training, accuracy) })),
+          finetuneErrors(rows)]
       : card({ title: "Comparison not run yet", iconName: "cpu", body: h("div", { class: "stack tight" },
           h("p", {}, "Training needs a GPU, so the numbers are produced on a free Colab T4 and then committed to the repository. Nothing is shown here until that run exists."),
           h("ol", { style: "margin:0;padding-left:1.3rem;display:grid;gap:.4rem" },
-            h("li", {}, "Open ", h("span", { class: "mono" }, "finetune/finetune_router_colab.ipynb"), " in Colab with a T4 runtime (about 10 minutes)."),
+            h("li", {}, "Open ", h("span", { class: "mono" }, "finetune/finetune_router_colab.ipynb"), " in Colab with a T4 runtime (about 13 minutes)."),
             h("li", {}, "It builds the dataset, trains the LoRA adapter and evaluates base, fine-tuned and API models on the held-out test set."),
             h("li", {}, "Copy ", h("span", { class: "mono" }, "finetune/results/"), " back into the repository - this page then shows accuracy, latency and cost.")),
           d.dataset ? h("p", { class: "muted" }, `Dataset ready: ${d.dataset.train} training, ${d.dataset.val} validation and ${d.dataset.test} test messages (no template shared between training and test).`) : null) }),
     h("div", { class: "grid g3" },
-      use("cpu", "Fine-tuned small model", "Narrow, high-volume, stable tasks with a fixed set of answers: routing, sentiment, tone. Milliseconds on a small GPU, almost no marginal cost, data stays in-house. Cannot learn new facts without retraining."),
+      use("cpu", "Fine-tuned small model", "Narrow, high-volume, stable tasks with a fixed set of answers: routing, sentiment, tone. Tens of milliseconds on a small GPU and data stays in-house, but the GPU is a fixed cost that only pays off at volume. Cannot learn new facts without retraining."),
       use("book", "RAG", "Anything whose answer lives in documents that change: policies, prices, stock. Updating knowledge is a re-index, not a training run, and every answer can cite its source."),
       use("sparkle", "Large API model", "Open-ended reasoning, multi-step tool use and the long tail a small model never saw. Highest quality, but the highest latency and cost, with rate limits.")));
 }

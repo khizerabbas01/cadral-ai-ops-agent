@@ -1,0 +1,221 @@
+{
+  "test_size": 57,
+  "test_fingerprint": "2d889a563b20",
+  "rows": [
+    {
+      "kind": "base",
+      "model": "Qwen2.5-1.5B-Instruct (base, zero-shot)",
+      "accuracy": 0.7018,
+      "macro_f1": 0.7052,
+      "invalid_outputs": 0,
+      "latency_ms_p50": 72.9,
+      "latency_ms_p95": 118.0,
+      "cost_usd_per_1k_requests": 0.008,
+      "by_label": {
+        "support": {
+          "n": 24,
+          "correct": 20
+        },
+        "orders": {
+          "n": 19,
+          "correct": 6
+        },
+        "escalation": {
+          "n": 14,
+          "correct": 14
+        }
+      },
+      "errors": [
+        {
+          "text": "Hello, Can I get a refund on my mirror? it stopped working",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Hi, What are your opening hours? Thanks",
+          "gold": "support",
+          "predicted": "orders"
+        },
+        {
+          "text": "hi there I received the wrong item in UK-10174",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Hi, I never received my refund for UK-10760 cheers",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "i never received my refund for uk-10437",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Hiya, order UK-10052 \u2013 the courier left it in the rain and the heater is ruined, refund please Thanks",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Can I get a refund on my towel bale? it stopped wokring Thanks",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Hello, order UK-10979 \u2013 the courier left it in the rain and the table lamp is ruined, refund please thanks!",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "What are your opennig hours?",
+          "gold": "support",
+          "predicted": "orders"
+        },
+        {
+          "text": "hi there I received the wrong item in UK-10695 ASAP",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Hey - I received the wrong item in UK-10267 Please help.",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Hey - I never received my refund for UK-10340 thanks!",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "how much is nominated day delivery Thanks",
+          "gold": "support",
+          "predicted": "orders"
+        },
+        {
+          "text": "Good morning. What are your opening hours Thanks",
+          "gold": "support",
+          "predicted": "orders"
+        },
+        {
+          "text": "Not happy, the bookcase in UK-10340 is scratched. Can I have a refund?",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "order UK-10744 \u2013 the courier left it in the rain and the sofa is ruined, refund please cheers",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Hey - Can I get a refund on my kettle? it stopped working ASAP",
+          "gold": "orders",
+          "predicted": "support"
+        }
+      ],
+      "measured_at": "2026-11-21T01:31:33Z",
+      "hardware": "Tesla T4",
+      "dtype": "float16",
+      "versions": {
+        "torch": "2.14.1+cu130",
+        "transformers": "5.22.1"
+      },
+      "single_pass": {
+        "accuracy": 0.7193,
+        "macro_f1": 0.7176,
+        "latency_ms_p50": 35.0,
+        "latency_ms_p95": 56.4
+      }
+    },
+    {
+      "kind": "finetuned",
+      "model": "Qwen2.5-1.5B-Instruct + LoRA (fine-tuned)",
+      "accuracy": 0.9825,
+      "macro_f1": 0.9844,
+      "invalid_outputs": 0,
+      "latency_ms_p50": 80.9,
+      "latency_ms_p95": 128.9,
+      "cost_usd_per_1k_requests": 0.0081,
+      "by_label": {
+        "support": {
+          "n": 24,
+          "correct": 23
+        },
+        "orders": {
+          "n": 19,
+          "correct": 19
+        },
+        "escalation": {
+          "n": 14,
+          "correct": 14
+        }
+      },
+      "errors": [
+        {
+          "text": "Good morning. what happens if my parcel is lat ein general?",
+          "gold": "support",
+          "predicted": "orders"
+        }
+      ],
+      "measured_at": "2026-11-21T01:31:46Z",
+      "hardware": "Tesla T4",
+      "dtype": "float16",
+      "versions": {
+        "torch": "2.14.1+cu130",
+        "transformers": "5.22.1",
+        "peft": "0.21.2"
+      },
+      "single_pass": {
+        "accuracy": 0.9825,
+        "macro_f1": 0.9844,
+        "latency_ms_p50": 34.8,
+        "latency_ms_p95": 55.2
+      }
+    },
+    {
+      "kind": "api",
+      "model": "openai/gpt-oss-120b (large API model)",
+      "accuracy": 0.9474,
+      "macro_f1": 0.9518,
+      "invalid_outputs": 0,
+      "latency_ms_p50": 433.1,
+      "latency_ms_p95": 534.4,
+      "cost_usd_per_1k_requests": 0.0386,
+      "by_label": {
+        "support": {
+          "n": 24,
+          "correct": 24
+        },
+        "orders": {
+          "n": 19,
+          "correct": 16
+        },
+        "escalation": {
+          "n": 14,
+          "correct": 14
+        }
+      },
+      "errors": [
+        {
+          "text": "Can I get a refund on my towel bale? it stopped wokring Thanks",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Not happy, the bookcase in UK-10340 is scratched. Can I have a refund?",
+          "gold": "orders",
+          "predicted": "support"
+        },
+        {
+          "text": "Hey - Can I get a refund on my kettle? it stopped working ASAP",
+          "gold": "orders",
+          "predicted": "support"
+        }
+      ],
+      "measured_at": "2026-11-21T01:13:33Z",
+      "hardware": "Groq API",
+      "tokens_per_request": 178,
+      "reasoning_effort": "low",
+      "server_ms_p50": 359.2
+    }
+  ]
+}

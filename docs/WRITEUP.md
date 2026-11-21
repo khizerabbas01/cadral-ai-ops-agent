@@ -51,20 +51,53 @@ all attention and MLP projections, 3 epochs, loss only on the label token). **Da
 57 test messages generated from templates with noise (typos, casing, greetings) plus hard negatives; test
 templates never appear in training.
 
-**Results:** run `finetune/finetune_router_colab.ipynb` on a free T4 and paste `finetune/results/results.md` here.
-This machine has no GPU, so the numbers have **not** been produced yet and none are claimed.
+**Results** on the 57 held-out messages, measured on 21 November 2026 (raw files, including every misclassified
+message, in [`finetune/results/`](../finetune/results)):
 
-| Model | Accuracy | Macro-F1 | p50 latency | Cost / 1k requests |
-|---|---|---|---|---|
-| Qwen2.5-1.5B base (zero-shot) | _pending_ | | | |
-| Qwen2.5-1.5B + LoRA | _pending_ | | | |
-| gpt-oss-120b on Groq (large API model) | _pending_ | | | |
+| Model | Accuracy | Macro-F1 | p50 latency | p95 latency | Cost / 1k requests |
+|---|---|---|---|---|---|
+| Qwen2.5-1.5B base (zero-shot) | 70.2% (40/57) | 0.705 | 73 ms | 118 ms | $0.0080 |
+| Qwen2.5-1.5B + LoRA | **98.2%** (56/57) | 0.984 | 81 ms | 129 ms | $0.0081 |
+| gpt-oss-120b on Groq (large API model) | 94.7% (54/57) | 0.952 | 433 ms | 534 ms | $0.0386 |
+
+How it was measured: the two local models ran on a free Colab T4 in float16 with greedy decoding and were timed
+in process, so their latency has no network in it. The API model was called from the development PC with the
+application's own settings (reasoning effort low), so its 433 ms includes the internet round trip; Groq's own
+queue and processing time was 359 ms at the median. Local cost is GPU time at $0.35 an hour with the GPU fully
+used; API cost is tokens at list price (178 per request). No model gave an answer that could not be parsed.
+
+What the numbers support:
+
+- **Fine-tuning is what makes the small model usable.** Out of the box it sent 13 of the 19 order messages to the
+  Support agent. Training 1.2% of its weights (18.5M of 1.56B parameters, 10 minutes on the T4) took it from 70%
+  to 98%.
+- **Against the large API model the accuracy gap is not established.** Two messages separate them, and on 57
+  messages the 95% intervals overlap (91-100% against 86-98%). The API model's three misses are all refund
+  requests for a faulty item, which this dataset labels `orders`; the fine-tuned model has learnt that
+  convention, while the API model only had a one-line definition. The fine-tuned model's one miss is a general
+  question with a typo ("what happens if my parcel is lat ein general?").
+- **Latency is the clear difference:** 81 ms against 433 ms, and 35 ms when the label is read from a single
+  forward pass, which is how `finetune/serve.py` answers (same 98.2%). A deployed classifier would add its own
+  network hop, but no rate limit.
+- **Cost only favours the small model at volume.** $0.008 against $0.039 per thousand requests assumes a busy
+  GPU. A T4 left on all month costs about $252, which buys 6.5 million API calls, so below roughly that many
+  routed messages a month the API is cheaper unless the GPU is shared or scales to zero.
+
+Limits: the test set is small and synthetic, from the same generator as the training data (different
+templates), so it measures unseen phrasings of the same kinds of request, not real customer traffic. It is one
+training run with one seed. The adapter is not deployed: the live demo has no GPU and routes with gpt-oss-20b,
+and the system eval in section 4 was not re-run with the fine-tuned router.
+
+One practical finding: a T4 only emulates bfloat16. The first evaluation, in bfloat16, took 191 ms per request
+for the base model; float16 gave the same 40/57 in 73 ms. Evaluation and the classifier server now pick the
+half-precision type the GPU runs natively. Training still uses bfloat16 and took 10 minutes; float16 training
+was not tried.
 
 **When to use which**
 
 - **Fine-tuned small model** - narrow, high-volume, stable tasks with a fixed output space: routing, sentiment,
-  tone rewriting. Milliseconds on a small GPU, near-zero marginal cost, data stays in-house, behaviour is
-  consistent. Cannot learn new facts without retraining.
+  tone rewriting. Tens of milliseconds on a small GPU, data stays in-house, behaviour is consistent. The GPU is a
+  fixed cost that only pays off at volume (see above), and the model cannot learn new facts without retraining.
 - **RAG** - anything whose answer lives in documents that change: policies, prices, stock. Updating the
   knowledge base is a re-index, not a training run, and answers are citable and auditable.
 - **Large API model** - open-ended reasoning, multi-step tool use, drafting nuanced replies, and the long tail
@@ -129,8 +162,11 @@ sent back to the model once, and if it is still unbacked the customer gets a han
 - The first run with those models took 7 to 9 seconds per reply: ONNX Runtime sized its thread pools from the
   host's core count while the container may use 2 vCPU. With the pools limited to the CPU quota
   (`RAG_THREADS`, or the cgroup limit) the same questions take about 2 seconds.
-- The fine-tune comparison has not been run (no GPU on the build machine). The LLM-mode eval has been run once,
-  with lite retrieval; the ONNX embedding + cross-encoder path is unmeasured.
+- The fine-tuned router is measured (section 3) but not deployed: the live demo has no GPU, so it routes with
+  gpt-oss-20b. The adapter was trained in a temporary Colab session and is not stored anywhere; the notebook
+  rebuilds it in about 13 minutes.
+- The LLM-mode eval has been run once, with lite retrieval; the ONNX embedding + cross-encoder path is
+  unmeasured.
 - Groq's free tier allows about one full eval run a day on top of normal testing (8K tokens/min, 1,000
   requests/day per model), so sample traffic is loaded in offline mode rather than through the LLM.
 - Slack, SMTP/IMAP and Telegram integrations are implemented but were not exercised against the real services.

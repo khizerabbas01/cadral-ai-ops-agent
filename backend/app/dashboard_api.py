@@ -333,15 +333,19 @@ def _line_count(path: Path) -> int | None:
         return None
 
 
-def _finetune() -> dict:
-    root = BASE_DIR.parent / "finetune"
-    results = None
+def _read_json(path: Path) -> dict | None:
     try:
-        results = json.loads((root / "results" / "results.json").read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        pass
+        return None
+
+
+def _finetune() -> dict:
+    """The comparison and training record written by finetune/evaluate.py and finetune/train.py (run on a GPU elsewhere)."""
+    root = BASE_DIR.parent / "finetune"
     sizes = {split: _line_count(root / "data" / f"{split}.jsonl") for split in ("train", "val", "test")}
-    return {"results": results, "dataset": sizes if any(sizes.values()) else None}
+    return {"results": _read_json(root / "results" / "results.json"), "training": _read_json(root / "results" / "train.json"),
+            "dataset": sizes if any(sizes.values()) else None}
 
 
 def _run_summary(r: EvalRun) -> dict:
